@@ -201,7 +201,14 @@ export function createScreens({ root, hudRoot, actions, save, audio }) {
     if (data.newRecord) box.append(el('p', 'record', t('new_record')));
     box.append(btn('primary', t('play_again'), actions.onRestart)); // всегда доступна (п. 4.5)
     if (data.rvBoosters) {
-      box.append(btn('rv', `▶ ${t('rv_boosters')}`, actions.onRvBoosters));
+      // Награда — три бустера одного типа: игрок выбирает тот, которого не хватило.
+      // Каждая кнопка сама называет и рекламу, и конкретную награду (п. 4.5.1).
+      box.append(el('p', 'rv-title', t('rv_pick')));
+      const rvRow = el('div', 'row rv-row');
+      for (const type of ['hammer', 'shuffle', 'undo']) {
+        rvRow.append(btn('rv small', t(`rv_${type}`), () => actions.onRvBoosters(type)));
+      }
+      box.append(rvRow);
     }
     if (data.rvDaily) {
       box.append(btn('rv', `▶ ${t('rv_daily')}`, actions.onRvDaily));
@@ -250,7 +257,7 @@ export function createScreens({ root, hudRoot, actions, save, audio }) {
 
   const BOOSTER_ICONS = { hammer: '🔨', shuffle: '🔀', undo: '↩' };
 
-  function updateHud(game, { goalLine = '', movesLeft = null, best = null } = {}) {
+  function updateHud(game, { goalLine = '', movesLeft = null, best = null, hammerActive = false } = {}) {
     const visible = !!game;
     hud.bar.style.display = visible ? '' : 'none';
     hud.boosters.style.display = visible ? '' : 'none';
@@ -266,6 +273,8 @@ export function createScreens({ root, hudRoot, actions, save, audio }) {
       b.textContent = `${BOOSTER_ICONS[type]} ${left}`;
       b.disabled = left < 1 || game.phase !== 'playing';
       b.title = t(`bo_${type}`);
+      // молот — режим прицеливания: подсвечиваем, пока он включён
+      b.classList.toggle('active', type === 'hammer' && hammerActive);
     }
   }
 

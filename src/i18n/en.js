@@ -53,7 +53,10 @@ export default {
   best: 'Best: {n}',
   new_record: 'New record!',
   play_again: 'Play again',
-  rv_boosters: 'Watch ad → +3 boosters',
+  rv_pick: 'Watch an ad → 3 boosters of your choice:',
+  rv_hammer: '▶ 3 hammers',
+  rv_shuffle: '▶ 3 shuffles',
+  rv_undo: '▶ 3 undos',
   rv_daily: 'Watch ad → second ranked attempt',
   rv_theme: 'Watch ad → unlock “{name}” theme',
 

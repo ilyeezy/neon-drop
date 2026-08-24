@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createSession } from '../src/content/session.js';
 import { createStubPlatform } from '../src/platform/stub.js';
 import { defaultSave } from '../src/save/storage.js';
+import { dailyDateKey } from '../src/content/modes.js';
 
 // Фейки внешнего мира: session принимает все зависимости инжекцией, поэтому
 // связка «ядро ↔ рендер ↔ ввод» проверяется без DOM и канваса.
@@ -32,6 +33,9 @@ function fakeScreens() {
 function makeSession({ boosters } = {}) {
   const renderer = fakeRenderer();
   const data = defaultSave(1);
+  // фиксируем дату дозаправки: иначе ежедневный добор поднял бы запас до 3/3/3
+  // и тесты проверяли бы не то, что задают
+  data.boostersRefilledOn = dailyDateKey();
   if (boosters) data.boosters = { ...boosters };
   const saveMgr = { data, commit() {} };
   const metrics = { cellPx: 40, boardOrigin: { x: 0, y: 0 }, traySlots: [], trayCell: 20, w: 400, h: 800, dpr: 1 };
@@ -109,6 +113,71 @@ test('пока очередь эффектов не пуста, ввод ост�
   assert.equal(game.phase, 'playing');
 });
 
+// Молот — режим прицеливания, а не мгновенное действие: раньше выйти из него
+// можно было только ткнув в поле, промах по пустой клетке был единственной
+// отменой.
+test('молот включается и выключается повторным нажатием', () => {
+  const { session, screens } = makeSession({ boosters: { hammer: 2, shuffle: 0, undo: 0 } });
+  session.startMode('classic');
+  assert.equal(session.hammerActive, false);
+  session.useBooster('hammer');
+  assert.equal(session.hammerActive, true, 'первое нажатие включает прицеливание');
+  const hudCalls = screens.calls.filter((c) => c[0] === 'updateHud');
+  assert.equal(hudCalls.at(-1)[2].hammerActive, true, 'HUD знает про активный режим');
+  session.useBooster('hammer');
+  assert.equal(session.hammerActive, false, 'повторное нажатие выключает');
+  assert.equal(session.game.boosters.hammer, 2, 'включение и выключение ничего не тратит');
+});
+
+test('промах молотом по пустой клетке режим не сбрасывает, удар — сбрасывает', () => {
+  const { session } = makeSession({ boosters: { hammer: 2, shuffle: 0, undo: 0 } });
+  session.startMode('classic');
+  const game = session.game;
+  const slot = game.tray.findIndex(Boolean);
+  outer: for (let y = 0; y < 8; y++) {
+    for (let x = 0; x < 8; x++) {
+      if (game.canPlacePiece(slot, x, y)) { session.placePiece(slot, x, y); break outer; }
+    }
+  }
+  session.syncAnimations();
+  session.useBooster('hammer');
+  const empty = (() => {
+    for (let y = 7; y >= 0; y--) for (let x = 7; x >= 0; x--) if (!((game.board.masks[y] >> x) & 1)) return { x, y };
+    return null;
+  })();
+  session.hammerCell(empty.x, empty.y);
+  assert.equal(session.hammerActive, true, 'промах не выкидывает из режима');
+  assert.equal(game.boosters.hammer, 2, 'промах не тратит бустер');
+  const filled = (() => {
+    for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) if ((game.board.masks[y] >> x) & 1) return { x, y };
+    return null;
+  })();
+  session.hammerCell(filled.x, filled.y);
+  assert.equal(session.hammerActive, false, 'после удара режим выключается');
+  assert.equal(game.boosters.hammer, 1);
+});
+
+test('Escape и пауза гасят режим молота', () => {
+  const { session } = makeSession({ boosters: { hammer: 2, shuffle: 0, undo: 0 } });
+  session.startMode('classic');
+  session.useBooster('hammer');
+  session.cancelHammer();
+  assert.equal(session.hammerActive, false);
+  session.useBooster('hammer');
+  session.pause();
+  assert.equal(session.hammerActive, false, 'пауза снимает прицеливание');
+});
+
+// Награда за рекламу — три бустера одного типа на выбор игрока.
+test('rewarded выдаёт 3 бустера выбранного типа', () => {
+  const { session, save } = makeSession({ boosters: { hammer: 0, shuffle: 0, undo: 0 } });
+  session.startMode('classic');
+  session.grantBoosters('shuffle');
+  assert.equal(session.game.boosters.shuffle, 3);
+  assert.equal(session.game.boosters.hammer, 0, 'другие типы не трогаются');
+  assert.equal(save.boosters.shuffle, 3, 'пул в сейве обновлён');
+});
+
 test('undo не уводит в animating и остаётся доступным сразу', () => {
   const { session } = makeSession({ boosters: { hammer: 3, shuffle: 3, undo: 3 } });
   session.startMode('classic');
@@ -124,4 +193,17 @@ test('undo не уводит в animating и остаётся доступным
   session.useBooster('undo');
   assert.equal(game.phase, 'playing');
   assert.equal(game.moveCount, before - 1);
+});
+
+// Регрессия: ожидание конца анимации осыпания шло на requestAnimationFrame,
+// и в фоновой вкладке (кадров нет) экран результата не показывался никогда —
+// игра выглядела зависшей после проигрыша.
+test('экран результата показывается даже когда кадры не идут', async () => {
+  const { session, renderer, screens } = makeSession({ boosters: { hammer: 0, shuffle: 0, undo: 0 } });
+  session.startMode('classic');
+  renderer.setBusy(true); // рендер «занят» и никогда не освободится: кадров нет
+  session.game.end('loss', 'test-quit');
+  assert.equal(screens.calls.some((c) => c[0] === 'result'), false, 'сразу не показываем');
+  await new Promise((r) => setTimeout(r, 2300)); // потолок ожидания 2 с
+  assert.equal(screens.calls.some((c) => c[0] === 'result'), true, 'показан по таймеру');
 });

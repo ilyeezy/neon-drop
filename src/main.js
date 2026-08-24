@@ -73,6 +73,7 @@ async function boot() {
     renderer,
     onPlace: (slot, x, y) => session.placePiece(slot, x, y),
     onPause: () => session.pause(),
+    onCancel: () => session.cancelHammer(),
     isGameVisible: () => screens.currentName === null,
   });
   session.setKeyboard(keyboardInput);
@@ -128,7 +129,7 @@ async function boot() {
           screens.themes();
         });
       },
-      onRvBoosters: () => session.showRewarded(() => session.grantBoosters()),
+      onRvBoosters: (type) => session.showRewarded(() => session.grantBoosters(type)),
       onRvDaily: () => session.showRewarded(() => {
         save.daily.rvSecond = true;
         saveMgr.commit(true);

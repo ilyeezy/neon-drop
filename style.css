@@ -65,7 +65,21 @@ html, body {
   min-width: 56px;
   min-height: 48px;
   font-size: 15px;
+  transition: box-shadow 0.15s, border-color 0.15s, background 0.15s;
 }
+/* молот в режиме прицеливания: кнопка явно «нажата» */
+.booster.active {
+  background: rgba(56, 189, 248, 0.3);
+  border-color: rgba(56, 189, 248, 0.9);
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.35), 0 0 16px rgba(56, 189, 248, 0.55);
+  animation: booster-pulse 1.2s ease-in-out infinite;
+}
+@keyframes booster-pulse {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.35), 0 0 14px rgba(56, 189, 248, 0.45); }
+  50% { box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.5), 0 0 22px rgba(56, 189, 248, 0.7); }
+}
+.rv-title { margin: 6px 0 0; text-align: center; font-size: 13px; opacity: 0.85; }
+.rv-row .btn { font-size: 13px; padding: 8px 6px; }
 
 /* --- экраны --- */
 #screens {

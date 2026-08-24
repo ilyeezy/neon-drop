@@ -20,6 +20,7 @@ export function createSession({ platform, saveMgr, renderer, layout, dragInput }
   let gameplayActive = false;
   let runStats = { maxStreak: 0, boardCleared: false, boostersUsed: 0 };
   let tutorial = null; // { stepIdx }
+  let hammerActive = false;
   const adPolicy = createAdPolicy();
   const save = () => saveMgr.data;
 
@@ -51,7 +52,7 @@ export function createSession({ platform, saveMgr, renderer, layout, dragInput }
   }
 
   function refreshHud() {
-    screens.updateHud(game, hudLine());
+    screens.updateHud(game, { ...hudLine(), hammerActive });
   }
 
   function persistRun(critical = false) {
@@ -112,6 +113,7 @@ export function createSession({ platform, saveMgr, renderer, layout, dragInput }
 
   function enterParty() {
     screens.hideAll();
+    hammerActive = false;
     dragInput.setHammerMode(false);
     renderer.setLayout(layout.setGameSize(game.board.size));
     gameplay(true);
@@ -198,9 +200,14 @@ export function createSession({ platform, saveMgr, renderer, layout, dragInput }
     gameplay(false);
     if (tutorial) return;
     if (ev.outcome === 'win') sfx.win(); else sfx.lose();
+    // Ждём, пока рендер доиграет осыпание блоков, но ожидание идёт на таймере,
+    // а не на кадрах: в фоновой вкладке rAF не тикает, и на нём экран результата
+    // не показался бы вовсе — игрок видел бы застывшую партию. Потолок ожидания
+    // гарантирует показ даже если очередь по какой-то причине не пустеет.
+    const deadline = Date.now() + 2000;
     const waitIdle = () => {
-      if (renderer.busy()) requestAnimationFrame(waitIdle);
-      else showResult(ev); // экран результата — по опустошению очереди, не по animationsDone
+      if (renderer.busy() && Date.now() < deadline) setTimeout(waitIdle, 100);
+      else showResult(ev);
     };
     waitIdle();
   }
@@ -209,6 +216,7 @@ export function createSession({ platform, saveMgr, renderer, layout, dragInput }
 
   function pause({ system = false } = {}) {
     if (!game || tutorial) return;
+    setHammerMode(false);
     if (game.phase === 'playing' || game.phase === 'animating') {
       game.pause();
       gameplay(false);
@@ -252,13 +260,26 @@ export function createSession({ platform, saveMgr, renderer, layout, dragInput }
 
   // --- бустеры ---
 
+  // Молот — режим прицеливания: повторное нажатие на кнопку (или Escape)
+  // выключает его. Раньше выйти можно было только ткнув в поле, и промах по
+  // пустой клетке был единственным способом отменить выбор.
+  function setHammerMode(on) {
+    if (hammerActive === on) return;
+    hammerActive = on;
+    dragInput.setHammerMode(on);
+    refreshHud();
+  }
+
   function useBooster(type) {
-    if (!game) return;
+    if (!game || game.phase === 'over') return;
     if (type === 'hammer') {
-      dragInput.setHammerMode(true);
+      if (hammerActive) { setHammerMode(false); sfx.uiClick(); return; }
+      if (game.boosters.hammer < 1) { sfx.invalid(); return; }
+      setHammerMode(true);
       sfx.uiClick();
       return;
     }
+    setHammerMode(false); // другой бустер отменяет прицеливание
     const res = game.applyBooster(type);
     if (res.ok) sfx.booster(); else sfx.invalid();
     refreshHud();
@@ -266,20 +287,22 @@ export function createSession({ platform, saveMgr, renderer, layout, dragInput }
 
   function hammerCell(x, y) {
     const res = game.applyBooster('hammer', { x, y });
-    dragInput.setHammerMode(false);
     if (res.ok) {
+      setHammerMode(false); // удар состоялся — выходим из режима
       sfx.booster();
       renderer.burstAt(x, y);
     } else {
-      sfx.invalid();
+      sfx.invalid(); // промах по пустой клетке режим не сбрасывает
     }
     refreshHud();
   }
 
   // --- rewarded ---
 
-  function grantBoosters() {
-    const grant = { hammer: 1, shuffle: 1, undo: 1 }; // +3 бустера
+  // Награда за rewarded — три бустера ОДНОГО типа, который выбрал игрок:
+  // размазанные «+1 каждого» не решают ту проблему, ради которой игрок смотрел.
+  function grantBoosters(type) {
+    const grant = { [type]: 3 };
     if (game && game.phase !== 'over') {
       game.addBoosters(grant);
       save().boosters = { ...game.boosters };
@@ -383,6 +406,8 @@ export function createSession({ platform, saveMgr, renderer, layout, dragInput }
     quitToMenu,
     useBooster,
     hammerCell,
+    cancelHammer: () => setHammerMode(false),
+    get hammerActive() { return hammerActive; },
     grantBoosters,
     showRewarded,
     startTutorial,

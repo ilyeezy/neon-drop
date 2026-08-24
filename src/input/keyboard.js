@@ -5,7 +5,7 @@ import { canPlace } from '../core/bitboard.js';
 import { linesAfterPlace } from './drag-logic.js';
 import { SHAPE_BY_ID } from '../core/shapes.js';
 
-export function createKeyboardInput({ getGame, renderer, onPlace, onPause, isGameVisible }) {
+export function createKeyboardInput({ getGame, renderer, onPlace, onPause, onCancel, isGameVisible }) {
   let slot = null;
   let cx = 0;
   let cy = 0;
@@ -74,7 +74,7 @@ export function createKeyboardInput({ getGame, renderer, onPlace, onPause, isGam
         }
         break;
       }
-      case 'Escape': reset(); break;
+      case 'Escape': reset(); onCancel?.(); break;
       case 'KeyP': onPause(); break;
       default: break;
     }
