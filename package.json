@@ -1,0 +1,10 @@
+{
+  "name": "neon-drop-dev",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "autotest": "node tools/autotest.js",
+    "verify-levels": "node tools/verify-levels.js 8"
+  }
+}
