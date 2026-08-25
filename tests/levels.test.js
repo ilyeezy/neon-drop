@@ -15,10 +15,15 @@ test('20 уровней с уникальными id и корректными �
     assert.ok(types.has(type), `тип цели не используется: ${type}`);
   }
   for (const level of LEVELS) {
-    assert.ok(level.moveLimit > 0, `нет лимита ходов: ${level.id}`);
-    assert.ok(level.star2Moves < level.moveLimit, `порог второй звезды не строже лимита: ${level.id}`);
+    // лимит ходов необязателен: есть уровни на терпение, а не на скорость
+    if (level.moveLimit !== undefined) {
+      assert.ok(level.moveLimit > 0, `битый лимит ходов: ${level.id}`);
+      assert.ok(level.star2Moves < level.moveLimit, `порог второй звезды не строже лимита: ${level.id}`);
+    }
+    assert.ok(level.star2Moves > 0, `нет порога второй звезды: ${level.id}`);
     assert.ok(goalText(level).length > 0);
   }
+  assert.equal(LEVELS.find((l) => l.id === 4).moveLimit, undefined, 'на 4 уровне лимита нет');
 });
 
 test('раскладки: без дублей клеток и валидны по инвариантам ядра', () => {

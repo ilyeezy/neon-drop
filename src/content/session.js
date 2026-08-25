@@ -43,7 +43,7 @@ export function createSession({ platform, saveMgr, renderer, layout, dragInput }
     if (party?.level) {
       return {
         goalLine: goalText(party.level),
-        movesLeft: Math.max(0, party.level.moveLimit - game.moveCount),
+        movesLeft: party.level.moveLimit ? Math.max(0, party.level.moveLimit - game.moveCount) : null,
         best: null,
       };
     }

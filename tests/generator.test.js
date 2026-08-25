@@ -318,3 +318,47 @@ test('дымовой прогон: 30 партий случайного бота
     assert.equal(unfair, false, `seed ${seed}`);
   }
 });
+
+// Главное обещание игроку: выданную тройку можно разыграть целиком — все три
+// фигуры ставятся, при необходимости через очистки между постановками.
+// Раньше гарантировалась лишь одна размещаемая фигура, и игрок упирался в
+// тупик не по своей вине (см. отчёт с поля: SQ3 + S4 + T4 при полном трее).
+// @spec GEN-SOLV-003
+test('полная разыгрываемость: каждая выдача проходится целиком', () => {
+  const gen = createGenerator({ requireFullSolvable: true });
+  const rng = createRng(2026);
+  const boards = [emptyBoard(), scatteredBoard(), denseBoard(), crowdedBoard()];
+  for (const board of boards) {
+    for (let i = 0; i < 60; i++) {
+      const pieces = gen(board, rng, { count: 3 });
+      const shapes = pieces.map((p) => SHAPE_BY_ID[p.shapeId]);
+      assert.equal(isFullyPlayable(board, shapes), true,
+        `тупиковая выдача ${shapes.map((s) => s.id).join()} при fill=${board.masks.filter(Boolean).length}`);
+    }
+  }
+});
+
+test('партия целиком: ни одной тупиковой выдачи за игру случайного бота', () => {
+  const provider = createGenerator({ requireFullSolvable: true });
+  let checked = 0;
+  for (let seed = 1; seed <= 25; seed++) {
+    const game = createGame({ size: 8, seed, headless: true, trayProvider: provider });
+    const botRng = createRng(500 + seed);
+    const audit = (pieces) => {
+      const full = pieces.filter(Boolean);
+      if (full.length !== 3) return;
+      checked += 1;
+      const shapes = full.map((p) => SHAPE_BY_ID[p.shapeId]);
+      assert.notEqual(isFullyPlayable(game.board, shapes), false,
+        `seed ${seed}: выдачу нельзя разыграть целиком`);
+    };
+    audit(game.tray);
+    game.on('trayChanged', ({ pieces }) => audit(pieces));
+    while (game.phase === 'playing') {
+      const mv = randomMove(game, botRng);
+      if (!mv) break;
+      game.placePiece(mv.slot, mv.x, mv.y);
+    }
+  }
+  assert.ok(checked > 50, `проверено выдач: ${checked}`);
+});

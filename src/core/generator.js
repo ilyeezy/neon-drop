@@ -138,7 +138,7 @@ export function isFullyPlayable(board, shapes, budget = BALANCE.generator.solver
 export function createGenerator(options = {}) {
   const requireFullSolvable = options.requireFullSolvable ?? false;
   const stats = options.collectStats
-    ? { issues: 0, regens: 0, forcedP1: 0, solverCalls: 0, solverNodes: [] }
+    ? { issues: 0, regens: 0, forcedP1: 0, rescued: 0, solverCalls: 0, solverNodes: [] }
     : null;
 
   function provider(board, rng, opts) {
@@ -167,7 +167,7 @@ export function createGenerator(options = {}) {
         if (stats) stats.regens += 1;
         continue;
       }
-      if (requireFullSolvable && count === 3) {
+      if (requireFullSolvable) {
         const solvable = isFullyPlayable(board, candidate, BALANCE.generator.solverNodeBudget, stats);
         if (solvable !== true) { // «не доказано» разыгрываемостью не считается
           if (stats) stats.regens += 1;
@@ -178,8 +178,17 @@ export function createGenerator(options = {}) {
       return withColors(rng, candidate);
     }
 
-    // исчерпание лимита: последний кандидат с обычной гарантией, если была;
-    // форс P1 — без PRNG на форму, цвета как обычно (ТЗ 4.1)
+    // Исчерпание лимита. Для режима с полной разыгрываемостью сначала пробуем
+    // спасательный набор из точек: он разыгрывается всегда, пока на поле есть
+    // свободные клетки, — игрок не должен упираться в тупик не по своей вине.
+    if (requireFullSolvable) {
+      const rescue = new Array(count).fill(SHAPE_BY_ID.P1);
+      if (isFullyPlayable(board, rescue, BALANCE.generator.solverNodeBudget, stats) === true) {
+        if (stats) stats.rescued += 1;
+        return withColors(rng, rescue); // формы без PRNG, цвета как обычно
+      }
+    }
+    // иначе последний кандидат с обычной гарантией; форс P1 — без PRNG на форму (ТЗ 4.1)
     const forms = guaranteedFallback ?? last;
     if (!hasPlaceable(board, forms)) {
       forms[count - 1] = SHAPE_BY_ID.P1;

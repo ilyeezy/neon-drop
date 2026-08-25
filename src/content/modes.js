@@ -34,7 +34,9 @@ export function buildParty(modeId, { save, levelId } = {}) {
         size: isBig ? 10 : 8,
         seed: ((Date.now() + runCounter * 7919) >>> 0) || 1,
         fairMode: fair,
-        trayProvider: createGenerator(),
+        // тройка обязана быть разыгрываемой целиком (с учётом очисток между
+        // постановками); в честном режиме гарантий нет по определению
+        trayProvider: createGenerator({ requireFullSolvable: !fair }),
       },
       recordKey: fair ? (isBig ? 'fairBig' : 'fairClassic') : (isBig ? 'big' : 'classic'),
       level: null,
@@ -52,7 +54,7 @@ export function buildParty(modeId, { save, levelId } = {}) {
         size: 8,
         seed: dailySeed(),
         fairMode: false, // гарантия в ежедневном не отключается (HLD)
-        trayProvider: createGenerator(),
+        trayProvider: createGenerator({ requireFullSolvable: true }),
       },
       recordKey: null,
       level: null,
