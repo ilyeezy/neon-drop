@@ -207,3 +207,34 @@ test('экран результата показывается даже когд
   await new Promise((r) => setTimeout(r, 2300)); // потолок ожидания 2 с
   assert.equal(screens.calls.some((c) => c[0] === 'result'), true, 'показан по таймеру');
 });
+
+// После победы в задачах игрок должен идти дальше прямо с экрана результата,
+// а не выходить в меню и заново искать уровень в списке.
+test('победа на уровне предлагает следующий уровень', () => {
+  const { session, screens } = makeSession();
+  session.startMode('levels', 1);
+  session.game.end('win', 'goal');
+  const result = screens.calls.find((c) => c[0] === 'result')[1];
+  assert.equal(result.outcome, 'win');
+  assert.equal(result.nextLevelId, 2, 'предлагаем второй уровень');
+});
+
+test('проигрыш и последний уровень кнопку не показывают', () => {
+  const lost = makeSession();
+  lost.session.startMode('levels', 1);
+  lost.session.game.end('loss', 'moves');
+  assert.equal(lost.screens.calls.find((c) => c[0] === 'result')[1].nextLevelId, null,
+    'после проигрыша идти дальше некуда');
+
+  const last = makeSession();
+  last.session.startMode('levels', 20);
+  last.session.game.end('win', 'goal');
+  assert.equal(last.screens.calls.find((c) => c[0] === 'result')[1].nextLevelId, null,
+    'после последнего уровня следующего нет');
+
+  const classic = makeSession();
+  classic.session.startMode('classic');
+  classic.session.game.end('loss', 'no-fit');
+  assert.equal(classic.screens.calls.find((c) => c[0] === 'result')[1].nextLevelId, null,
+    'в классике уровней нет');
+});

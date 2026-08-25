@@ -203,7 +203,12 @@ export function createScreens({ root, hudRoot, actions, save, audio }) {
     box.append(el('p', 'score-line', t('score', { n: data.score })));
     if (data.best !== null) box.append(el('p', 'hint', t('best', { n: data.best })));
     if (data.newRecord) box.append(el('p', 'record', t('new_record')));
-    box.append(btn('primary', t('play_again'), actions.onRestart)); // всегда доступна (п. 4.5)
+    if (data.nextLevelId) {
+      box.append(btn('primary', t('level_next'), () => actions.onLevel(data.nextLevelId)));
+      box.append(btn('', t('play_again'), actions.onRestart)); // переиграть на звёзды
+    } else {
+      box.append(btn('primary', t('play_again'), actions.onRestart)); // всегда доступна (п. 4.5)
+    }
     if (data.rvBoosters) {
       // Награда — три бустера одного типа: игрок выбирает тот, которого не хватило.
       // Каждая кнопка сама называет и рекламу, и конкретную награду (п. 4.5.1).

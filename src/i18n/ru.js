@@ -52,6 +52,7 @@ export default {
   score: 'Очки: {n}',
   best: 'Рекорд: {n}',
   new_record: 'Новый рекорд!',
+  level_next: 'Следующий уровень',
   play_again: 'Играть снова',
   rv_pick: 'Смотреть рекламу → 3 бустера на выбор:',
   rv_hammer: '▶ 3 молотка',

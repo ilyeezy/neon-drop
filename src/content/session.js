@@ -6,6 +6,7 @@ import { buildParty } from './modes.js';
 import { createGoalTracker, goalText, starsFor } from './goals.js';
 import { applyResult, refillDailyBoosters } from './progress.js';
 import { TUTORIAL_STEPS, tutorialProvider } from './tutorial.js';
+import { LEVEL_BY_ID } from '../levels/levels.js';
 import { createAdPolicy } from '../platform/ads-policy.js';
 import { sfx, suspendAudio, resumeAudio } from '../audio/sound.js';
 import { dailyDateKey } from './modes.js';
@@ -175,6 +176,10 @@ export function createSession({ platform, saveMgr, renderer, layout, dragInput }
       best: party.recordKey ? save().records[party.recordKey]
         : party.modeId === 'daily' ? save().daily.best : null,
       newRecord: outcome.newRecord,
+      // после победы уровень открывает следующий — предлагаем идти дальше
+      // прямо отсюда, а не гонять игрока через меню и список уровней
+      nextLevelId: party.level && ev.outcome === 'win' && LEVEL_BY_ID[party.level.id + 1]
+        ? party.level.id + 1 : null,
       rvBoosters: true,
       rvDaily: party.modeId === 'daily' && save().daily.lastDate === today
         && save().daily.playedToday && !save().daily.secondAttemptUsed,

@@ -52,6 +52,7 @@ export default {
   score: 'Score: {n}',
   best: 'Best: {n}',
   new_record: 'New record!',
+  level_next: 'Next level',
   play_again: 'Play again',
   rv_pick: 'Watch an ad → 3 boosters of your choice:',
   rv_hammer: '▶ 3 hammers',
