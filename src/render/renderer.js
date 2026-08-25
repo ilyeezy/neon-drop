@@ -93,14 +93,14 @@ export function createRenderer(canvas, particles) {
       effects.push({ type: 'clear', t: 0, dur: 0.3, cells: ev.removedCells.map((c) => ({ x: c.x, y: c.y })) });
       burstCells(ev.removedCells, (c) => hexRgb(cellColorHex(c.color || 1)),
         ev.count >= 2 ? 14 : 9, 260);
-      burstCells(ev.iceDamaged, () => [200, 240, 255], 8, 180);
-      burstCells(ev.goldCleared, () => [251, 191, 36], 12, 220);
+      burstCells(ev.iceDamaged, () => hexRgb(theme.ice.fill), 8, 180);
+      burstCells(ev.goldCleared, () => hexRgb(theme.gold), 12, 220);
       if (ev.count >= 2) shake = { t: 0, dur: 0.14, mag: 5 };
     }));
     unsub.push(game.on('boardEmpty', () => {
       const p = cellCenter(game.board.size / 2 - 0.5, game.board.size / 2 - 0.5);
-      particles.spawn(p.x, p.y, [251, 191, 36], 60, 420, { size: cellPx() * 0.16, life: 1 });
-      popups.push({ text: t('perfect'), x: p.x, y: p.y, t: 0, dur: 0.9, color: '#fbbf24' });
+      particles.spawn(p.x, p.y, hexRgb(theme.gold), 60, 420, { size: cellPx() * 0.16, life: 1 });
+      popups.push({ text: t('perfect'), x: p.x, y: p.y, t: 0, dur: 0.9, color: theme.gold });
     }));
     unsub.push(game.on('streakChanged', ({ step }) => {
       if (step > prevStreakStep && step >= 2) {
@@ -113,7 +113,7 @@ export function createRenderer(canvas, particles) {
     }));
     unsub.push(game.on('scoreChanged', ({ delta }) => {
       if (delta > 0 && lastPlaceCenter) {
-        popups.push({ text: `+${delta}`, x: lastPlaceCenter.x, y: lastPlaceCenter.y, t: 0, dur: 0.7, color: '#ffffff', small: true });
+        popups.push({ text: `+${delta}`, x: lastPlaceCenter.x, y: lastPlaceCenter.y, t: 0, dur: 0.7, color: theme.ui.text, small: true });
       }
     }));
     unsub.push(game.on('fillChanged', ({ ratio }) => { fill = ratio; }));
@@ -168,7 +168,7 @@ export function createRenderer(canvas, particles) {
     ctx.lineWidth = Math.max(2, cp * 0.08);
     ctx.strokeRect(o.x - cp * 0.12, o.y - cp * 0.12, bp + cp * 0.24, bp + cp * 0.24);
     // сетка
-    ctx.fillStyle = 'rgba(255,255,255,0.05)';
+    ctx.fillStyle = theme.grid;
     for (let y = 0; y < game.board.size; y++) {
       for (let x = 0; x < game.board.size; x++) {
         ctx.beginPath();
@@ -194,7 +194,7 @@ export function createRenderer(canvas, particles) {
           const p = cellCenter(x, y);
           const danger = timer <= 2;
           const alpha = danger ? 0.7 + 0.3 * Math.sin(time * 8) : 1;
-          ctx.fillStyle = danger ? `rgba(248,113,113,${alpha})` : '#f9fafb';
+          ctx.fillStyle = danger ? rgba(theme.bomb.glow, alpha) : theme.ui.text;
           ctx.font = `700 ${Math.round(cellPx() * 0.5)}px system-ui, sans-serif`;
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
@@ -256,13 +256,10 @@ export function createRenderer(canvas, particles) {
           for (const ry of drag.clears.rows) ctx.fillRect(layout.boardOrigin.x, layout.boardOrigin.y + ry * cp, boardPx(), cp);
           for (const cx of drag.clears.cols) ctx.fillRect(layout.boardOrigin.x + cx * cp, layout.boardOrigin.y, cp, boardPx());
         }
-      } else {
-        ctx.strokeStyle = 'rgba(248,113,113,0.7)';
-        ctx.lineWidth = 2;
-        for (const [dx, dy] of shape.cells) {
-          ctx.strokeRect(layout.boardOrigin.x + (x + dx) * cp + 2, layout.boardOrigin.y + (y + dy) * cp + 2, cp - 4, cp - 4);
-        }
       }
+      // Невалидную позицию не подсвечиваем вовсе: красный контур выглядел
+      // грязно, а «сюда нельзя» и так очевидно — клетка занята.
+
     }
     ctx.save();
     ctx.shadowColor = 'rgba(0,0,0,0.5)';
@@ -277,7 +274,7 @@ export function createRenderer(canvas, particles) {
     const cp = cellPx();
     const { shape, color, x, y, valid } = cursor;
     drawShapeAt(shape, color, layout.boardOrigin.x + x * cp, layout.boardOrigin.y + y * cp, cp, true);
-    ctx.strokeStyle = valid ? rgba(theme.accent, 0.9) : 'rgba(248,113,113,0.9)';
+    ctx.strokeStyle = rgba(theme.accent, valid ? 0.9 : 0.25);
     ctx.lineWidth = 2;
     ctx.strokeRect(layout.boardOrigin.x + x * cp, layout.boardOrigin.y + y * cp, shape.w * cp, shape.h * cp);
   }

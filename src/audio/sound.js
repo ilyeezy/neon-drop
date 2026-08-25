@@ -8,6 +8,8 @@ let soundOn = true;
 let musicOn = true;
 let musicTimer = null;
 let unlocked = false;
+let musicNodes = [];      // звучащие сейчас ноты музыки
+const MUSIC_VOL = 0.16;
 
 function ensureCtx() {
   if (ctx) return ctx;
@@ -19,7 +21,7 @@ function ensureCtx() {
   sfxGain = ctx.createGain();
   sfxGain.connect(master);
   musicGain = ctx.createGain();
-  musicGain.gain.value = 0.16;
+  musicGain.gain.value = MUSIC_VOL;
   musicGain.connect(master);
   return ctx;
 }
@@ -108,6 +110,11 @@ export const sfx = {
 const PAD = [110, 130.8, 98, 87.3]; // Am – C – G – F в басу
 const PLUCK = [220, 261.6, 329.6, 392, 440];
 
+function trackMusicNode(node) {
+  musicNodes.push(node);
+  node.onended = () => { musicNodes = musicNodes.filter((n) => n !== node); };
+}
+
 function scheduleBar(barIdx) {
   if (!musicOn || !ctx || ctx.state !== 'running') return;
   const t0 = ctx.currentTime + 0.05;
@@ -127,6 +134,7 @@ function scheduleBar(barIdx) {
     osc.connect(f);
     f.connect(g);
     g.connect(musicGain);
+    trackMusicNode(osc);
     osc.start(t0);
     osc.stop(t0 + 3.8);
   }
@@ -142,6 +150,7 @@ function scheduleBar(barIdx) {
     g.gain.exponentialRampToValueAtTime(0.001, ts + 0.7);
     osc.connect(g);
     g.connect(musicGain);
+    trackMusicNode(osc);
     osc.start(ts);
     osc.stop(ts + 0.8);
   }
@@ -150,6 +159,9 @@ function scheduleBar(barIdx) {
 let bar = 0;
 function startMusic() {
   if (musicTimer || !ensureCtx()) return;
+  const now = ctx.currentTime;
+  musicGain.gain.cancelScheduledValues(now);
+  musicGain.gain.setValueAtTime(MUSIC_VOL, now);
   const loop = () => {
     scheduleBar(bar);
     bar += 1;
@@ -163,4 +175,15 @@ function stopMusic() {
     clearTimeout(musicTimer);
     musicTimer = null;
   }
+  if (!ctx || !musicGain) return;
+  // отменяем таймер мало: уже запущенные ноты тянутся до 3.8 с. Сводим шину
+  // музыки к нулю коротким рампом (чтобы не щёлкнуло) и обрываем сами ноты.
+  const now = ctx.currentTime;
+  musicGain.gain.cancelScheduledValues(now);
+  musicGain.gain.setValueAtTime(musicGain.gain.value, now);
+  musicGain.gain.linearRampToValueAtTime(0, now + 0.06);
+  for (const node of musicNodes) {
+    try { node.stop(now + 0.08); } catch { /* уже остановлена */ }
+  }
+  musicNodes = [];
 }

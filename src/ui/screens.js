@@ -164,7 +164,11 @@ export function createScreens({ root, hudRoot, actions, save, audio }) {
         dot.style.background = color;
         sw.append(dot);
       }
-      card.append(el('div', 'theme-name', t(themeDef.nameKey)));
+      card.style.background = `linear-gradient(160deg, ${themeDef.bg[0]}, ${themeDef.bg[1]})`;
+      card.style.borderColor = themeDef.accent;
+      const name = el('div', 'theme-name', t(themeDef.nameKey));
+      name.style.color = themeDef.accent;
+      card.append(name);
       card.append(sw);
       if (!owned) {
         card.append(el('div', 'hint', unlockText(themeDef, t)));

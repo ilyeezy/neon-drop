@@ -70,18 +70,18 @@ function drawBlock(ctx, px, margin, color, { ghost = false, glowColor = color } 
   ctx.restore();
 }
 
-function drawIce(ctx, px, margin, hp) {
+function drawIce(ctx, px, margin, hp, tone) {
   const size = px - margin * 2;
   ctx.save();
-  ctx.fillStyle = hp === 2 ? 'rgba(165,225,255,0.55)' : 'rgba(165,225,255,0.35)';
+  ctx.fillStyle = rgba(tone.fill, hp === 2 ? 0.55 : 0.35);
   roundRect(ctx, margin, margin, size, size, size * 0.18);
   ctx.fill();
-  ctx.strokeStyle = 'rgba(220,245,255,0.8)';
+  ctx.strokeStyle = rgba(tone.fill, 0.85);
   ctx.lineWidth = Math.max(1, size * 0.05);
   roundRect(ctx, margin, margin, size, size, size * 0.18);
   ctx.stroke();
   // трещины: hp1 — глубокие
-  ctx.strokeStyle = hp === 2 ? 'rgba(255,255,255,0.5)' : 'rgba(30,80,120,0.8)';
+  ctx.strokeStyle = hp === 2 ? rgba('#ffffff', 0.5) : rgba(tone.crack, 0.85);
   ctx.lineWidth = Math.max(1, size * (hp === 2 ? 0.03 : 0.05));
   ctx.beginPath();
   ctx.moveTo(margin + size * 0.25, margin + size * 0.2);
@@ -96,12 +96,12 @@ function drawIce(ctx, px, margin, hp) {
   ctx.restore();
 }
 
-function drawStone(ctx, px, margin) {
+function drawStone(ctx, px, margin, tone) {
   const size = px - margin * 2;
   ctx.save();
   const grad = ctx.createLinearGradient(0, margin, 0, margin + size);
-  grad.addColorStop(0, '#7b8494');
-  grad.addColorStop(1, '#4b5563');
+  grad.addColorStop(0, tone[0]);
+  grad.addColorStop(1, tone[1]);
   ctx.fillStyle = grad; // матовый, без свечения
   roundRect(ctx, margin, margin, size, size, size * 0.18);
   ctx.fill();
@@ -114,15 +114,15 @@ function drawStone(ctx, px, margin) {
   ctx.restore();
 }
 
-function drawBomb(ctx, px, margin) {
+function drawBomb(ctx, px, margin, tone) {
   const size = px - margin * 2;
   const c = margin + size / 2;
   ctx.save();
-  ctx.shadowColor = '#f87171';
+  ctx.shadowColor = tone.glow;
   ctx.shadowBlur = margin * 0.6;
   const grad = ctx.createRadialGradient(c - size * 0.15, c - size * 0.15, size * 0.1, c, c, size * 0.5);
-  grad.addColorStop(0, '#4b3040');
-  grad.addColorStop(1, '#180b12');
+  grad.addColorStop(0, tone.core);
+  grad.addColorStop(1, tone.edge);
   ctx.fillStyle = grad;
   ctx.beginPath();
   ctx.arc(c, c, size * 0.44, 0, Math.PI * 2);
@@ -130,12 +130,12 @@ function drawBomb(ctx, px, margin) {
   ctx.restore();
 }
 
-function drawGold(ctx, px, margin) {
+function drawGold(ctx, px, margin, tone) {
   const size = px - margin * 2;
   ctx.save();
-  ctx.strokeStyle = '#fbbf24';
+  ctx.strokeStyle = tone;
   ctx.lineWidth = Math.max(2, size * 0.08);
-  ctx.shadowColor = '#fbbf24';
+  ctx.shadowColor = tone;
   ctx.shadowBlur = margin * 0.8;
   roundRect(ctx, margin + size * 0.08, margin + size * 0.08, size * 0.84, size * 0.84, size * 0.16);
   ctx.stroke();
@@ -161,10 +161,10 @@ export function bakeSprites(cellPx, theme, dpr) {
     px, margin, dpr,
     blocks,
     ghosts,
-    ice2: bake((ctx) => drawIce(ctx, px, margin, 2)),
-    ice1: bake((ctx) => drawIce(ctx, px, margin, 1)),
-    stone: bake((ctx) => drawStone(ctx, px, margin)),
-    bomb: bake((ctx) => drawBomb(ctx, px, margin)),
-    gold: bake((ctx) => drawGold(ctx, px, margin)),
+    ice2: bake((ctx) => drawIce(ctx, px, margin, 2, theme.ice)),
+    ice1: bake((ctx) => drawIce(ctx, px, margin, 1, theme.ice)),
+    stone: bake((ctx) => drawStone(ctx, px, margin, theme.stone)),
+    bomb: bake((ctx) => drawBomb(ctx, px, margin, theme.bomb)),
+    gold: bake((ctx) => drawGold(ctx, px, margin, theme.gold)),
   };
 }

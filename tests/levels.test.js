@@ -80,3 +80,30 @@ test('золото в раскладках — только на пустых к
     }
   }
 });
+
+// Тема должна менять весь облик игры, а не только цвета фигур: если у новой
+// темы забыть тон спецблоков или палитру интерфейса — часть экрана останется
+// от предыдущей темы, и это заметно только глазами.
+test('каждая тема задаёт полный набор цветов', async () => {
+  const { THEMES } = await import('../src/render/themes.js');
+  assert.equal(THEMES.length, 6);
+  const ids = new Set();
+  for (const th of THEMES) {
+    assert.ok(!ids.has(th.id), `дубль темы ${th.id}`);
+    ids.add(th.id);
+    assert.equal(th.colors.length, 7, `${th.id}: 7 цветов фигур`);
+    assert.equal(th.bg.length, 2, `${th.id}: градиент фона`);
+    for (const key of ['accent', 'grid', 'gold', 'ice', 'stone', 'bomb', 'ui']) {
+      assert.ok(th[key], `${th.id}: нет ${key}`);
+    }
+    assert.ok(th.ice.fill && th.ice.crack, `${th.id}: лёд`);
+    assert.equal(th.stone.length, 2, `${th.id}: камень`);
+    assert.ok(th.bomb.core && th.bomb.edge && th.bomb.glow, `${th.id}: бомба`);
+    for (const key of ['panel', 'border', 'text', 'overlay']) {
+      assert.ok(th.ui[key], `${th.id}: ui.${key}`);
+    }
+    for (const c of [...th.colors, th.accent, th.gold, ...th.bg]) {
+      assert.match(c, /^#[0-9a-f]{6}$/i, `${th.id}: цвет ${c} должен быть hex`);
+    }
+  }
+});

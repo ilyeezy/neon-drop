@@ -9,7 +9,7 @@ import { createLayout } from './ui/layout.js';
 import { createBackground } from './render/background.js';
 import { createParticles } from './render/particles.js';
 import { createRenderer } from './render/renderer.js';
-import { THEME_BY_ID } from './render/themes.js';
+import { THEME_BY_ID, applyThemeToCss } from './render/themes.js';
 import { createDragInput } from './input/drag.js';
 import { createKeyboardInput } from './input/keyboard.js';
 import { createSession } from './content/session.js';
@@ -51,6 +51,7 @@ async function boot() {
   const theme = THEME_BY_ID[save.progress.activeTheme] ?? THEME_BY_ID.neon;
   renderer.setTheme(theme);
   background.setTheme(theme);
+  applyThemeToCss(theme); // панели, кнопки и текст тоже живут в теме
   renderer.setLayout(layout.metrics);
   background.resize(window.innerWidth, window.innerHeight, layout.metrics.dpr);
 
@@ -120,6 +121,7 @@ async function boot() {
         const th = THEME_BY_ID[id];
         renderer.setTheme(th);
         background.setTheme(th);
+        applyThemeToCss(th);
         sfx.uiClick();
       },
       onRvTheme(id) {
