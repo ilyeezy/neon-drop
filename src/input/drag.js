@@ -110,7 +110,9 @@ export function createDragInput({ canvas, getGame, getLayout, renderer, onPlace,
     const slot = trayHit(p);
     if (slot === null || !game.tray[slot]) return;
     const layout = getLayout();
-    const liftCells = e.pointerType === 'touch' ? 1.5 : 0.3; // палец не закрывает место (ТЗ 5.2)
+    // Фигуру поднимаем заметно выше точки касания: под пальцем её не видно,
+    // а на мыши курсор всё равно перекрывает верхний ряд клеток.
+    const liftCells = e.pointerType === 'touch' ? 2.4 : 1.2;
     drag = {
       slot,
       shape: SHAPE_BY_ID[game.tray[slot].shapeId],
@@ -128,7 +130,10 @@ export function createDragInput({ canvas, getGame, getLayout, renderer, onPlace,
   });
 
   canvas.addEventListener('pointermove', (e) => {
-    const p = pos(e);
+    // берём последнее из объединённых событий: браузер копит их между кадрами,
+    // и без этого фигура отстаёт от пальца на быстрых движениях
+    const raw = e.getCoalescedEvents ? (e.getCoalescedEvents().at(-1) ?? e) : e;
+    const p = pos(raw);
     onPointerNorm?.(p);
     if (!drag || e.pointerId !== drag.pointerId) return;
     const res = evalNow(p);

@@ -3,7 +3,7 @@
 // реальному состоянию (п. 1.19.3).
 import { createGame, deserializeGame } from '../core/game.js';
 import { buildParty } from './modes.js';
-import { createGoalTracker, goalText, starsFor } from './goals.js';
+import { createGoalTracker, starsFor, goalBars, levelTotals } from './goals.js';
 import { applyResult, refillDailyBoosters } from './progress.js';
 import { TUTORIAL_STEPS, tutorialProvider } from './tutorial.js';
 import { LEVEL_BY_ID } from '../levels/levels.js';
@@ -42,18 +42,19 @@ export function createSession({ platform, saveMgr, renderer, layout, dragInput }
     if (!game) return {};
     if (party?.level) {
       return {
-        goalLine: goalText(party.level),
-        movesLeft: party.level.moveLimit ? Math.max(0, party.level.moveLimit - game.moveCount) : null,
+        // текст условия дублировал бы шкалы: они подписаны и показывают остаток
+        goalLine: '',
+        bars: goalBars(game, { ...party.level, ...levelTotals(party.level) }),
         best: null,
       };
     }
     const best = party?.recordKey ? save().records[party.recordKey]
       : party?.modeId === 'daily' ? save().daily.best : null;
-    return { goalLine: '', movesLeft: null, best };
+    return { goalLine: '', bars: [], best };
   }
 
   function refreshHud() {
-    screens.updateHud(game, { ...hudLine(), hammerActive });
+    screens.updateHud(game, { ...hudLine(), hammerActive, boosterBar: layout.metrics.boosterBar });
   }
 
   function persistRun(critical = false) {
@@ -423,6 +424,9 @@ export function createSession({ platform, saveMgr, renderer, layout, dragInput }
       return !!res?.ok;
     },
     onResize() {
+      // зоны HUD пересчитываются вместе с лейаутом: иначе полоса бустеров
+      // остаётся на старом месте и трей заезжает на неё после поворота
+      screens?.updateHud(game, { ...hudLine(), hammerActive, boosterBar: layout.metrics.boosterBar });
       dragInput.cancel();
       if (game && (game.phase === 'playing' || game.phase === 'animating') && !tutorial) {
         pause({ system: true }); // при ресайзе игра автоматически на паузе (ТЗ п. 8)

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { createGenerator, isFullyPlayable } from '../src/core/generator.js';
+import { createGenerator, isFullyPlayable, shapeWeight } from '../src/core/generator.js';
 import { createRng } from '../src/core/rng.js';
 import { SHAPES, SHAPE_BY_ID } from '../src/core/shapes.js';
 import { BALANCE } from '../src/core/balance.js';
@@ -22,12 +22,10 @@ const denseBoard = () => applyInitialBoard(createBoard(8), (() => { // fill 0.59
   return cells;
 })());
 
-const weightsLow = SHAPES.map((s) => s.weight * s.size);
-const weightsHigh = SHAPES.map((s) => {
-  let w = s.weight / s.size;
-  if ((s.w === 1 || s.h === 1) && s.size >= 3) w *= BALANCE.generator.lineBoost;
-  return w;
-});
+// веса берём из самого генератора: дублировать формулу в тесте — значит
+// ловить не баги, а расхождение двух копий правила
+const weightsLow = SHAPES.map((s) => shapeWeight(s, 0));
+const weightsHigh = SHAPES.map((s) => shapeWeight(s, 0.9));
 
 function valueFor(shapeId, weights) {
   const total = weights.reduce((a, b) => a + b, 0);

@@ -13,13 +13,17 @@ const COLOR_COUNT = 7;
 
 // ТЗ 4.3: адаптивные веса по заполненности поля.
 // @spec GEN-PICK-002
-function shapeWeight(shape, fill) {
+export function shapeWeight(shape, fill) {
   const { low, high } = BALANCE.generatorFill;
   if (fill < low) return shape.weight * shape.size; // ТЗ 4.3: на пустом поле мелочь скучна
   if (fill < high) return shape.weight;             // ТЗ 4.3: базовые веса
-  let w = shape.weight / shape.size;                // ТЗ 4.3: игрок задыхается — мельчим
+  // ТЗ 4.3: игрок задыхается — мельчим. Давление на крупные растёт с теснотой,
+  // мелочь и линии наоборот поддерживаются: раздача должна выручать, а не добивать.
+  const { tightPenalty, smallBoost, lineBoost } = BALANCE.generator;
+  let w = shape.weight / (shape.size ** tightPenalty);
+  if (shape.size <= 2) w *= smallBoost;
   const isLine = (shape.w === 1 || shape.h === 1) && shape.size >= 3;
-  if (isLine) w *= BALANCE.generator.lineBoost;     // линии прорезают завал
+  if (isLine) w *= lineBoost;                       // линии прорезают завал
   return w;
 }
 
@@ -67,6 +71,22 @@ function violatesAntiPatterns(forms, previous) {
 // ТЗ 4.1: минимум одна фигура выдачи обязана помещаться.
 // @spec GEN-GUAR-001
 const hasPlaceable = (board, forms) => forms.some((f) => anyFit(board, f));
+
+// Сколько валидных позиций у фигуры — мера того, насколько её легко пристроить.
+function placementCount(board, shape) {
+  let n = 0;
+  for (let y = 0; y <= board.size - shape.h; y++) {
+    for (let x = 0; x <= board.size - shape.w; x++) {
+      if (canPlace(board, shape, x, y)) n += 1;
+    }
+  }
+  return n;
+}
+
+// «Удобство» набора: суммарная свобода размещения. Подкрутка весов на длину
+// партии почти не влияла (замер: разброс в пределах шума), а выбор лучшего из
+// нескольких разыгрываемых кандидатов влияет напрямую.
+const dealComfort = (board, forms) => forms.reduce((sum, f) => sum + placementCount(board, f), 0);
 
 // @spec GEN-PICK-004, GEN-PICK-005
 function withColors(rng, forms) {
@@ -137,6 +157,7 @@ export function isFullyPlayable(board, shapes, budget = BALANCE.generator.solver
 // @spec GEN-PICK-001, GEN-GUAR-002, GEN-GUAR-003, GEN-SOLV-003, GEN-FAIR-001, GEN-DET-001
 export function createGenerator(options = {}) {
   const requireFullSolvable = options.requireFullSolvable ?? false;
+  const easyDeal = options.easyDeal ?? false;
   const stats = options.collectStats
     ? { issues: 0, regens: 0, forcedP1: 0, rescued: 0, solverCalls: 0, solverNodes: [] }
     : null;
@@ -156,6 +177,8 @@ export function createGenerator(options = {}) {
 
     let last = null;
     let guaranteedFallback = null;
+    let best = null;
+    let accepted = 0;
     for (let attempt = 0; attempt < BALANCE.generator.maxAttempts; attempt++) {
       const candidate = pickForms(rng, count, weights, total);
       last = candidate;
@@ -175,8 +198,14 @@ export function createGenerator(options = {}) {
           continue;
         }
       }
-      return withColors(rng, candidate);
+      if (!easyDeal) return withColors(rng, candidate);
+      // щадящая раздача: собираем несколько годных троек и отдаём самую удобную
+      const comfort = dealComfort(board, candidate);
+      if (!best || comfort > best.comfort) best = { forms: candidate, comfort };
+      accepted += 1;
+      if (accepted >= BALANCE.generator.easyCandidates) return withColors(rng, best.forms);
     }
+    if (best) return withColors(rng, best.forms);
 
     // Исчерпание лимита. Для режима с полной разыгрываемостью сначала пробуем
     // спасательный набор из точек: он разыгрывается всегда, пока на поле есть

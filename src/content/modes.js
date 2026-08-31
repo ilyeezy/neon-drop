@@ -18,7 +18,6 @@ let runCounter = 0;
 
 export function buildParty(modeId, { save, levelId } = {}) {
   runCounter += 1;
-  const fair = save.settings.fairMode;
   const base = {
     headless: false,
     boosters: { ...save.boosters },
@@ -33,12 +32,12 @@ export function buildParty(modeId, { save, levelId } = {}) {
         ...base,
         size: isBig ? 10 : 8,
         seed: ((Date.now() + runCounter * 7919) >>> 0) || 1,
-        fairMode: fair,
+        fairMode: false,
         // тройка обязана быть разыгрываемой целиком (с учётом очисток между
-        // постановками); в честном режиме гарантий нет по определению
-        trayProvider: createGenerator({ requireFullSolvable: !fair }),
+        // постановками) — способ раздачи игроку не показывается и не настраивается
+        trayProvider: createGenerator({ requireFullSolvable: true, easyDeal: true }),
       },
-      recordKey: fair ? (isBig ? 'fairBig' : 'fairClassic') : (isBig ? 'big' : 'classic'),
+      recordKey: isBig ? 'big' : 'classic',
       level: null,
       scored: true,
     };
@@ -54,7 +53,7 @@ export function buildParty(modeId, { save, levelId } = {}) {
         size: 8,
         seed: dailySeed(),
         fairMode: false, // гарантия в ежедневном не отключается (HLD)
-        trayProvider: createGenerator({ requireFullSolvable: true }),
+        trayProvider: createGenerator({ requireFullSolvable: true, easyDeal: true }),
       },
       recordKey: null,
       level: null,

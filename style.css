@@ -66,10 +66,11 @@ html, body {
 
 .booster-bar {
   position: absolute;
+  /* координаты приходят из лейаута: у бустеров своя зона, трей на неё не заезжает */
   bottom: calc(8px + env(safe-area-inset-bottom));
   left: 8px;
   display: flex;
-  flex-direction: column;
+  align-items: center;
   gap: 8px;
   pointer-events: auto;
 }
@@ -90,6 +91,33 @@ html, body {
   0%, 100% { box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent), 0 0 14px color-mix(in srgb, var(--accent) 45%, transparent); }
   50% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 50%, transparent), 0 0 22px color-mix(in srgb, var(--accent) 70%, transparent); }
 }
+.goal-bars {
+  position: absolute;
+  top: 60px; left: 8px; right: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  pointer-events: none;
+}
+.goal-bar { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; }
+.goal-bar-label { min-width: 58px; opacity: 0.85; }
+.goal-bar-value { min-width: 42px; text-align: right; font-variant-numeric: tabular-nums; }
+.goal-bar-track {
+  flex: 1;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--panel-border);
+  overflow: hidden;
+}
+.goal-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+  transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+/* шкала ходов — ресурс, который тратится: тёплый цвет отличает её от цели */
+.goal-bar-moves .goal-bar-fill { background: var(--gold); }
 .rv-title { margin: 6px 0 0; text-align: center; font-size: 13px; opacity: 0.85; }
 .rv-row .btn { font-size: 13px; padding: 8px 6px; }
 

@@ -133,7 +133,6 @@ export function createScreens({ root, hudRoot, actions, save, audio }) {
       settings(); // перерисовка на новом языке
     });
     box.append(langBtn);
-    box.append(toggle(t('st_fair'), s.fairMode, () => actions.onToggle('fairMode'), t('st_fair_hint')));
     box.append(btn('small', t('back'), actions.onMenu));
     mount('settings', box, { esc: actions.onMenu });
   }
@@ -256,7 +255,9 @@ export function createScreens({ root, hudRoot, actions, save, audio }) {
     boosterBtns: {},
   };
   hud.pauseBtn = btn('hud-pause', '⏸', () => actions.onPause());
+  hud.bars = el('div', 'goal-bars');
   hud.bar.append(hud.score, hud.best, hud.streak, hud.goal, hud.pauseBtn);
+  hudRoot.append(hud.bars);
   for (const type of ['hammer', 'shuffle', 'undo']) {
     const b = btn('booster', '', () => actions.onBooster(type));
     hud.boosterBtns[type] = b;
@@ -266,16 +267,46 @@ export function createScreens({ root, hudRoot, actions, save, audio }) {
 
   const BOOSTER_ICONS = { hammer: '🔨', shuffle: '🔀', undo: '↩' };
 
-  function updateHud(game, { goalLine = '', movesLeft = null, best = null, hammerActive = false } = {}) {
+  // Шкалы вместо текста цели: сколько осталось видно с одного взгляда.
+  function renderBars(bars) {
+    hud.bars.innerHTML = '';
+    hud.bars.style.display = bars.length ? '' : 'none';
+    for (const bar of bars) {
+      const row = el('div', `goal-bar goal-bar-${bar.kind}`);
+      row.append(el('span', 'goal-bar-label', t(bar.key)));
+      const track = el('div', 'goal-bar-track');
+      const fillEl = el('div', 'goal-bar-fill');
+      fillEl.style.width = `${Math.round((bar.value / Math.max(1, bar.max)) * 100)}%`;
+      track.append(fillEl);
+      row.append(track);
+      row.append(el('span', 'goal-bar-value', bar.text));
+      hud.bars.append(row);
+    }
+  }
+
+  function updateHud(game, { goalLine = '', bars = [], best = null, hammerActive = false, boosterBar = null } = {}) {
     const visible = !!game;
     hud.bar.style.display = visible ? '' : 'none';
     hud.boosters.style.display = visible ? '' : 'none';
+    hud.bars.style.display = visible && bars.length ? '' : 'none';
+    if (boosterBar) {
+      // бустеры живут в зоне, которую выделил лейаут, — трей на неё не наезжает
+      const st = hud.boosters.style;
+      st.left = `${boosterBar.left}px`;
+      st.bottom = `${boosterBar.bottom}px`;
+      st.right = boosterBar.right !== undefined ? `${boosterBar.right}px` : 'auto';
+      st.width = boosterBar.width ? `${boosterBar.width}px` : 'auto';
+      st.height = boosterBar.height ? `${boosterBar.height}px` : 'auto';
+      st.flexDirection = boosterBar.row ? 'row' : 'column';
+      st.justifyContent = boosterBar.row ? 'center' : 'flex-end';
+    }
     if (!game) return;
     hud.score.textContent = `${t('hud_score')} ${game.score}`;
     hud.best.textContent = best !== null ? `${t('hud_best')} ${best}` : '';
     const mult = [1, 1.2, 1.5, 2, 2.5, 3][Math.min(game.streakStep, 5)];
     hud.streak.textContent = game.streakStep > 0 ? `${t('hud_streak')} ×${mult}` : '';
-    hud.goal.textContent = movesLeft !== null ? `${goalLine} · ${t('moves_left', { n: movesLeft })}` : goalLine;
+    hud.goal.textContent = goalLine;
+    renderBars(bars);
     for (const type of ['hammer', 'shuffle', 'undo']) {
       const b = hud.boosterBtns[type];
       const left = game.boosters[type];
