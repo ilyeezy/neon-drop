@@ -211,6 +211,7 @@ for (const level of LEVELS) {
     requireFullSolvable: true,
     easyDeal: true,
     favor: level.goal.type === 'clearBoard' ? 'space' : 'chains',
+    smallFloor: 1,
   });
   const zero = [];
   const maxed = [];

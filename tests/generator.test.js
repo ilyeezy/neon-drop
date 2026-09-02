@@ -86,7 +86,11 @@ test('адаптация: пустое поле сдвигает к крупны
   };
   const low = meanSize(emptyBoard(), 11);
   const mid = meanSize(scatteredBoard(), 11);
-  assert.ok(low > mid + 0.2, `пусто ${low} должно быть крупнее базы ${mid}`);
+  const high = meanSize(denseBoard(), 11);
+  // разрыв «пусто против базы» невелик: мелочь режется в обеих корзинах
+  // (GEN-HELP-004), и весам остаётся только сдвиг внутри крупных
+  assert.ok(low > mid, `пусто ${low} должно быть крупнее базы ${mid}`);
+  assert.ok(low > high + 0.2, `пусто ${low} должно быть заметно крупнее тесноты ${high}`);
   const shareMid = lineShare(scatteredBoard(), 13);
   const shareHigh = lineShare(denseBoard(), 13);
   assert.ok(shareHigh > shareMid, `линии в тесноте ${shareHigh} ≤ базы ${shareMid}`);
@@ -423,4 +427,38 @@ test('подстановка ключа детерминирована и не �
   const second = gen(board, createRng(77), { count: 3 });
   assert.deepEqual(first.map((piece) => piece.shapeId), second.map((piece) => piece.shapeId));
   assert.ok(first.some((piece) => anyFit(board, SHAPE_BY_ID[piece.shapeId])));
+});
+
+// @spec GEN-HELP-004
+test('мелочь приходит по необходимости, а не в каждой выдаче', () => {
+  const gen = createGenerator({ requireFullSolvable: true, easyDeal: true });
+  const smallShare = (board, seed) => {
+    const rng = createRng(seed);
+    let small = 0;
+    for (let i = 0; i < 200; i++) {
+      for (const piece of gen(board, rng, { count: 3 })) {
+        if (SHAPE_BY_ID[piece.shapeId].size <= 2) small += 1;
+      }
+    }
+    return small / 600;
+  };
+  assert.equal(smallShare(emptyBoard(), 21), 0, 'на пустом поле мелочи быть не должно');
+  assert.ok(smallShare(denseBoard(), 21) > 0, 'в тесноте мелочь обязана появляться');
+});
+
+// @spec GEN-HELP-004
+test('дырка-одиночка открывает дорогу мелочи на просторном поле', () => {
+  const gen = createGenerator({ requireFullSolvable: true, easyDeal: true });
+  // окружаем одну пустую клетку со всех сторон: крупная фигура туда не встанет
+  const holed = applyInitialBoard(createBoard(8), [
+    ...rowCells(4, [3]), ...rowCells(6, [3]), ...rowCells(5, [2, 4]),
+  ]);
+  const rng = createRng(31);
+  let small = 0;
+  for (let i = 0; i < 200; i++) {
+    for (const piece of gen(holed, rng, { count: 3 })) {
+      if (SHAPE_BY_ID[piece.shapeId].size <= 2) small += 1;
+    }
+  }
+  assert.ok(small > 0, 'под дырку-одиночку выдача обязана давать мелочь');
 });

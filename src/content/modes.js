@@ -36,7 +36,11 @@ export function buildParty(modeId, { save, levelId } = {}) {
         fairMode: false,
         // тройка обязана быть разыгрываемой целиком (с учётом очисток между
         // постановками) — способ раздачи игроку не показывается и не настраивается
-        trayProvider: createGenerator({ requireFullSolvable: true, easyDeal: true }),
+        trayProvider: createGenerator({
+          requireFullSolvable: true,
+          easyDeal: true,
+          bulky: true,
+        }),
       },
       recordKey: isBig ? 'big' : 'classic',
       level: null,
@@ -60,6 +64,9 @@ export function buildParty(modeId, { save, levelId } = {}) {
           requireFullSolvable: true,
           easyDeal: true,
           favor: level.goal.type === 'clearBoard' ? 'space' : 'chains',
+          // в задачах мелочь — инструмент: ею добивают линию через нужную
+          // клетку. В счётных режимах она скучна и режется (GEN-HELP-004)
+          smallFloor: 1,
         }),
       },
       recordKey: null,

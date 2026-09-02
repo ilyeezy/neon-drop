@@ -153,6 +153,7 @@ function winRate(level, seeds) {
     requireFullSolvable: true,
     easyDeal: true,
     favor: level.goal.type === 'clearBoard' ? 'space' : 'chains',
+    smallFloor: 1,
   });
   let wins = 0;
   const moveCounts = [];

@@ -269,11 +269,43 @@ function withKey(board, rng, best) {
   return forms;
 }
 
+// Мелочь (1–2 клетки) полезна не всегда: на просторном поле она скучна и
+// тратит ход впустую. Нужной она становится в тесноте и когда на поле есть
+// дырки-одиночки — клетки, куда крупная фигура уже не входит.
+function needsSmall(board, fill) {
+  if (fill >= BALANCE.generatorFill.high) return true;
+  const n = board.size;
+  for (let y = 0; y < n; y++) {
+    for (let x = 0; x < n; x++) {
+      if ((board.masks[y] >> x) & 1) continue;
+      const up = y === 0 || ((board.masks[y - 1] >> x) & 1);
+      const down = y === n - 1 || ((board.masks[y + 1] >> x) & 1);
+      const left = x === 0 || ((board.masks[y] >> (x - 1)) & 1);
+      const right = x === n - 1 || ((board.masks[y] >> (x + 1)) & 1);
+      if (up && down && left && right) return true;
+    }
+  }
+  return false;
+}
+
+// Сколько мелочи допустимо в одной тройке при текущем состоянии поля.
+// `floor` поднимает нижнюю границу для режимов, где мелочь — рабочий
+// инструмент: в задачах ею добивают линию через нужную клетку (золото, лёд,
+// бомба), и запрет роняет проходимость.
+function smallAllowance(board, fill, floor) {
+  if (fill >= BALANCE.generatorFill.high) return 2;
+  return Math.max(floor, needsSmall(board, fill) ? 1 : 0);
+}
+
+const smallCount = (forms) => forms.reduce((n, f) => n + (f.size <= 2 ? 1 : 0), 0);
+
 // @spec GEN-PICK-001, GEN-GUAR-002, GEN-GUAR-003, GEN-SOLV-003, GEN-FAIR-001, GEN-DET-001
 export function createGenerator(options = {}) {
   const requireFullSolvable = options.requireFullSolvable ?? false;
   const easyDeal = options.easyDeal ?? false;
   const favorSpace = options.favor === 'space';
+  const smallFloor = options.smallFloor ?? 0;
+  const bulky = options.bulky ?? false;
   const stats = options.collectStats
     ? { issues: 0, regens: 0, forcedP1: 0, rescued: 0, solverCalls: 0, solverNodes: [] }
     : null;
@@ -291,6 +323,7 @@ export function createGenerator(options = {}) {
 
     if (fair) return withColors(rng, pickForms(rng, count, weights, total));
 
+    const allowance = smallAllowance(board, fill, smallFloor);
     let last = null;
     let guaranteedFallback = null;
     let best = null;
@@ -299,6 +332,10 @@ export function createGenerator(options = {}) {
       const candidate = pickForms(rng, count, weights, total);
       last = candidate;
       if (violatesAntiPatterns(candidate, previous)) {
+        if (stats) stats.regens += 1;
+        continue;
+      }
+      if (smallCount(candidate) > allowance) {
         if (stats) stats.regens += 1;
         continue;
       }
@@ -319,15 +356,18 @@ export function createGenerator(options = {}) {
       // сжечь больше линий, и лишь при равенстве — самую свободную в укладке
       const { chains, total: lines, left } = dealChain(board, candidate);
       const comfort = dealComfort(board, candidate);
-      // порядок ключей: сколько ходов подряд можно сжигать → сколько линий →
-      // сколько мусора останется на поле → свобода укладки. Занятость нужна
-      // третьим ключом ради целей «очистить поле»: без неё выдача набирала
-      // линии крупными фигурами и оставляла поле забитым.
-      // «Очистить поле» требует обратного приоритета: там ценно не тянуть
-      // серию, а закончить с наименьшим остатком.
+      const cells = candidate.reduce((n, f) => n + f.size, 0);
+      // Порядок ключей: сколько ходов подряд можно сжигать → сколько линий →
+      // третий ключ по режиму → свобода укладки.
+      // В счётных режимах третьим идёт масса фигур: без неё выбор скатывался
+      // в мелочь, которой серию тянуть проще, а игроку она скучна. В задачах
+      // наоборот важен чистый остаток — там линию добивают через конкретную
+      // клетку, и лишние клетки мешают (замер: 9 уровней с низким винрейтом
+      // против нуля). «Очистить поле» поднимает остаток на первое место.
+      const third = bulky ? cells : -left;
       const key = favorSpace
         ? [-left, chains, lines, comfort]
-        : [chains, lines, -left, comfort];
+        : [chains, lines, third, comfort];
       if (!best || cmpKey(key, best.key) > 0) best = { forms: candidate, key, chains };
       accepted += 1;
       if (accepted >= BALANCE.generator.easyCandidates) break;
