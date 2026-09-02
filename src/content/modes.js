@@ -53,7 +53,14 @@ export function buildParty(modeId, { save, levelId } = {}) {
         seed: ((Date.now() + runCounter * 104729) >>> 0) || 1,
         fairMode: false,
         initialBoard: level.board,
-        trayProvider: createGenerator({ requireFullSolvable: true }),
+        // помощь работает и в задачах: цель уровня — головоломка, а не борьба
+        // с выдачей. Под цель «очистить поле» выдача подстраивается отдельно —
+        // там ценен пустой остаток, а не длинная серия сгораний.
+        trayProvider: createGenerator({
+          requireFullSolvable: true,
+          easyDeal: true,
+          favor: level.goal.type === 'clearBoard' ? 'space' : 'chains',
+        }),
       },
       recordKey: null,
       level,

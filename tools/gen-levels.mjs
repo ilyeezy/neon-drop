@@ -149,7 +149,11 @@ function makeGoal(rng, id, goalType, gridStats) {
 // Прогон целевым ботом при нулевом запасе бустеров — то же, что делает
 // верификатор: уровень обязан проходиться без единого бустера (п. 4.5.2).
 function winRate(level, seeds) {
-  const provider = createGenerator({ requireFullSolvable: true });
+  const provider = createGenerator({
+    requireFullSolvable: true,
+    easyDeal: true,
+    favor: level.goal.type === 'clearBoard' ? 'space' : 'chains',
+  });
   let wins = 0;
   const moveCounts = [];
   for (let s = 1; s <= seeds; s++) {

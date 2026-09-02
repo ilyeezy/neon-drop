@@ -152,7 +152,6 @@ const RAW = [
       '####ii#.',
     ],
     goal: { type: 'streak', n: 3 },
-    moveLimit: 26,
     star2Moves: 16,
   },
   {
@@ -1600,19 +1599,19 @@ const RAW = [
   {
     id: 99,
     rows: [
-      '#.#.#...',
-      '.....###',
-      '.b#bs#.#',
+      '....#...',
+      '.....#..',
+      '.b#b.#..',
       '#s#.#..#',
-      'b.###.#.',
+      'b..##.#.',
       '...##...',
       '#s..b...',
       '.b#.###s',
     ],
     goal: { type: 'bombs' },
-    moveLimit: 33,
+    moveLimit: 40,
     star2Moves: 10,
-    bombTimer: 19,
+    bombTimer: 24,
   },
   {
     id: 100,

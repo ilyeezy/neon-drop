@@ -1,7 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { createGenerator, isFullyPlayable, shapeWeight } from '../src/core/generator.js';
+import {
+  createGenerator, isFullyPlayable, shapeWeight, bestClear, dealChain,
+} from '../src/core/generator.js';
 import { createRng } from '../src/core/rng.js';
 import { SHAPES, SHAPE_BY_ID } from '../src/core/shapes.js';
 import { BALANCE } from '../src/core/balance.js';
@@ -359,4 +361,66 @@ test('партия целиком: ни одной тупиковой выдач
     }
   }
   assert.ok(checked > 50, `проверено выдач: ${checked}`);
+});
+
+// доска с почти собранными рядами: очистка доступна, но не любой фигурой
+const nearlyFullRows = (rows, keepEmptyFrom = 7) => applyInitialBoard(
+  createBoard(8),
+  rows.flatMap((y) => rowCells(y, range(0, keepEmptyFrom - 1))),
+);
+
+// @spec GEN-HELP-001
+test('щадящая выдача: набор даёт фигуру под очистку, когда она возможна', () => {
+  const board = nearlyFullRows([5, 6, 7]);
+  const gen = createGenerator({ requireFullSolvable: true, easyDeal: true });
+  const runs = 30;
+  let served = 0;
+  for (let s = 0; s < runs; s++) {
+    const pieces = gen(board, createRng(500 + s), { count: 3 });
+    const shapes = pieces.map((piece) => SHAPE_BY_ID[piece.shapeId]);
+    if (shapes.some((shape) => bestClear(board, shape) > 0)) served += 1;
+  }
+  assert.equal(served, runs, 'каждый набор обязан содержать фигуру под очистку');
+});
+
+// @spec GEN-HELP-001
+test('щадящая выдача тянет серию сгораний, а не одну вспышку', () => {
+  const board = nearlyFullRows([4, 5, 6, 7], 6);
+  const easy = createGenerator({ requireFullSolvable: true, easyDeal: true });
+  const plain = createGenerator({ requireFullSolvable: true });
+  const chains = (gen) => {
+    let sum = 0;
+    for (let s = 0; s < 20; s++) {
+      const pieces = gen(board, createRng(900 + s), { count: 3 });
+      sum += dealChain(board, pieces.map((piece) => SHAPE_BY_ID[piece.shapeId])).chains;
+    }
+    return sum;
+  };
+  assert.ok(chains(easy) > chains(plain), 'помощь обязана давать больше ходов с очисткой');
+});
+
+// @spec GEN-HELP-002
+test('под цель «очистить поле» выдача оставляет меньше занятых клеток', () => {
+  const board = nearlyFullRows([6, 7], 6);
+  const space = createGenerator({ requireFullSolvable: true, easyDeal: true, favor: 'space' });
+  const chainsFirst = createGenerator({ requireFullSolvable: true, easyDeal: true });
+  const leftover = (gen) => {
+    let sum = 0;
+    for (let s = 0; s < 20; s++) {
+      const pieces = gen(board, createRng(1300 + s), { count: 3 });
+      sum += dealChain(board, pieces.map((piece) => SHAPE_BY_ID[piece.shapeId])).left;
+    }
+    return sum;
+  };
+  assert.ok(leftover(space) <= leftover(chainsFirst), 'режим «очистить поле» не должен грузить поле сильнее');
+});
+
+// @spec GEN-HELP-003, GEN-DET-001
+test('подстановка ключа детерминирована и не ломает гарантию постановки', () => {
+  const board = nearlyFullRows([3, 4, 5, 6, 7]);
+  const gen = createGenerator({ requireFullSolvable: true, easyDeal: true });
+  const first = gen(board, createRng(77), { count: 3 });
+  const second = gen(board, createRng(77), { count: 3 });
+  assert.deepEqual(first.map((piece) => piece.shapeId), second.map((piece) => piece.shapeId));
+  assert.ok(first.some((piece) => anyFit(board, SHAPE_BY_ID[piece.shapeId])));
 });

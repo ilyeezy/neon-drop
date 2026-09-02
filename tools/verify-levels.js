@@ -207,7 +207,11 @@ let hardFail = false;
 console.log(`Верификатор уровней: ${SEEDS} сидов на прогон`);
 console.log('lvl | цель        | без бустеров      | с бустерами        | вердикт');
 for (const level of LEVELS) {
-  const provider = createGenerator({ requireFullSolvable: true });
+  const provider = createGenerator({
+    requireFullSolvable: true,
+    easyDeal: true,
+    favor: level.goal.type === 'clearBoard' ? 'space' : 'chains',
+  });
   const zero = [];
   const maxed = [];
   for (let s = 1; s <= SEEDS; s++) {

@@ -5,7 +5,7 @@
 import { SHAPES, SHAPE_BY_ID } from './shapes.js';
 import { BALANCE } from './balance.js';
 import {
-  anyFit, canPlace, fillRatio, cloneBoard, cellIndex,
+  anyFit, canPlace, fillRatio, cloneBoard, cellIndex, fullMask, occupiedCount,
 } from './bitboard.js';
 import { findFullLines, clearLines } from './placement.js';
 
@@ -88,6 +88,99 @@ function placementCount(board, shape) {
 // нескольких разыгрываемых кандидатов влияет напрямую.
 const dealComfort = (board, forms) => forms.reduce((sum, f) => sum + placementCount(board, f), 0);
 
+// лексикографическое сравнение ключей: > 0 если a лучше b
+function cmpKey(a, b) {
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return a[i] - b[i];
+  }
+  return 0;
+}
+
+// Сколько линий сгорит, если поставить фигуру сюда. Без клонирования доски:
+// проверка гоняется по всем позициям всех фигур каталога, аллокации тут дороги.
+const scratch = new Uint16Array(16);
+function clearsAt(board, shape, x, y) {
+  const n = board.size;
+  const full = fullMask(n);
+  for (let i = 0; i < n; i++) scratch[i] = board.masks[i];
+  for (let dy = 0; dy < shape.h; dy++) scratch[y + dy] |= shape.rows[dy] << x;
+  let cleared = 0;
+  let colAnd = full;
+  for (let i = 0; i < n; i++) {
+    if (scratch[i] === full) cleared += 1;
+    colAnd &= scratch[i];
+  }
+  while (colAnd) { colAnd &= colAnd - 1; cleared += 1; }
+  return cleared;
+}
+
+// Лучшее, что фигура может сделать на этом поле: 0 — сжечь нечем.
+export function bestClear(board, shape) {
+  let best = 0;
+  for (let y = 0; y <= board.size - shape.h; y++) {
+    for (let x = 0; x <= board.size - shape.w; x++) {
+      if (!canPlace(board, shape, x, y)) continue;
+      const c = clearsAt(board, shape, x, y);
+      if (c > best) best = c;
+    }
+  }
+  return best;
+}
+
+// «Ключи к замку»: фигуры каталога, которыми прямо сейчас можно сжечь линию.
+// Это сердце помощи игроку — видеть почти собранный ряд и не получать под него
+// фигуру обиднее всего, а именно это и происходило, когда выдача смотрела
+// только на свободу размещения.
+function findKeys(board) {
+  const keys = [];
+  let best = 0;
+  for (const shape of SHAPES) {
+    const c = bestClear(board, shape);
+    if (c === 0) continue;
+    if (c > best) { best = c; keys.length = 0; }
+    if (c === best) keys.push(shape);
+  }
+  return { keys, best };
+}
+
+// Потенциал набора: жадно разыгрываем всю тройку и считаем, сколько ходов
+// подряд ею удаётся сжечь линию и сколько линий выходит всего.
+// Мерить максимум по одной фигуре нельзя: набор «одна мощная + две лишние»
+// даёт одну вспышку и обрывает серию, а игрок ждёт продолжения (замер на
+// уровнях-сериях: 0 побед из 8 против 3 из 8 у прежней выдачи).
+export function dealChain(board, forms) {
+  let work = board;
+  const rest = forms.slice();
+  let chains = 0;
+  let total = 0;
+  for (let step = 0; step < forms.length; step++) {
+    let pick = null;
+    let bestCells = 0;
+    for (let i = 0; i < rest.length; i++) {
+      const shape = rest[i];
+      for (let y = 0; y <= work.size - shape.h; y++) {
+        for (let x = 0; x <= work.size - shape.w; x++) {
+          if (!canPlace(work, shape, x, y)) continue;
+          const c = clearsAt(work, shape, x, y);
+          if (c > bestCells) { bestCells = c; pick = { i, shape, x, y }; }
+        }
+      }
+    }
+    if (!pick) break;
+    chains += 1;
+    total += bestCells;
+    work = cloneBoard(work);
+    for (const [dx, dy] of pick.shape.cells) {
+      work.masks[pick.y + dy] |= 1 << (pick.x + dx);
+      work.colors[cellIndex(work, pick.x + dx, pick.y + dy)] = 1;
+    }
+    const { rows, cols } = findFullLines(work);
+    if (rows.length || cols.length) clearLines(work, rows, cols);
+    rest.splice(pick.i, 1);
+  }
+  return { chains, total, left: occupiedCount(work) };
+}
+
 // @spec GEN-PICK-004, GEN-PICK-005
 function withColors(rng, forms) {
   const colors = forms.map(() => 1 + rng.int(COLOR_COUNT));
@@ -154,10 +247,33 @@ export function isFullyPlayable(board, shapes, budget = BALANCE.generator.solver
   return result;
 }
 
+// Если на поле есть чем сжечь линию, а в наборе такой фигуры нет — с высокой
+// вероятностью подменяем одну фигуру ключом. Игрок видит почти собранный ряд;
+// не дать под него фигуру — самое обидное, что может сделать генератор.
+function withKey(board, rng, best) {
+  const chance = BALANCE.generator.helpChance;
+  if (best.chains > 0 || chance <= 0) return best.forms;
+  const { keys } = findKeys(board);
+  if (!keys.length) return best.forms;
+  if (rng.next() >= chance) return best.forms;
+  const forms = [...best.forms];
+  const key = keys[rng.int(keys.length)];
+  // меняем ту фигуру, которую и так тяжелее всего пристроить
+  let worst = 0;
+  let worstCount = Infinity;
+  forms.forEach((f, i) => {
+    const c = placementCount(board, f);
+    if (c < worstCount) { worstCount = c; worst = i; }
+  });
+  forms[worst] = key;
+  return forms;
+}
+
 // @spec GEN-PICK-001, GEN-GUAR-002, GEN-GUAR-003, GEN-SOLV-003, GEN-FAIR-001, GEN-DET-001
 export function createGenerator(options = {}) {
   const requireFullSolvable = options.requireFullSolvable ?? false;
   const easyDeal = options.easyDeal ?? false;
+  const favorSpace = options.favor === 'space';
   const stats = options.collectStats
     ? { issues: 0, regens: 0, forcedP1: 0, rescued: 0, solverCalls: 0, solverNodes: [] }
     : null;
@@ -199,13 +315,24 @@ export function createGenerator(options = {}) {
         }
       }
       if (!easyDeal) return withColors(rng, candidate);
-      // щадящая раздача: собираем несколько годных троек и отдаём самую удобную
+      // щадящая раздача: из нескольких годных троек берём ту, которой можно
+      // сжечь больше линий, и лишь при равенстве — самую свободную в укладке
+      const { chains, total: lines, left } = dealChain(board, candidate);
       const comfort = dealComfort(board, candidate);
-      if (!best || comfort > best.comfort) best = { forms: candidate, comfort };
+      // порядок ключей: сколько ходов подряд можно сжигать → сколько линий →
+      // сколько мусора останется на поле → свобода укладки. Занятость нужна
+      // третьим ключом ради целей «очистить поле»: без неё выдача набирала
+      // линии крупными фигурами и оставляла поле забитым.
+      // «Очистить поле» требует обратного приоритета: там ценно не тянуть
+      // серию, а закончить с наименьшим остатком.
+      const key = favorSpace
+        ? [-left, chains, lines, comfort]
+        : [chains, lines, -left, comfort];
+      if (!best || cmpKey(key, best.key) > 0) best = { forms: candidate, key, chains };
       accepted += 1;
-      if (accepted >= BALANCE.generator.easyCandidates) return withColors(rng, best.forms);
+      if (accepted >= BALANCE.generator.easyCandidates) break;
     }
-    if (best) return withColors(rng, best.forms);
+    if (best) return withColors(rng, withKey(board, rng, best));
 
     // Исчерпание лимита. Для режима с полной разыгрываемостью сначала пробуем
     // спасательный набор из точек: он разыгрывается всегда, пока на поле есть
