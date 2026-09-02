@@ -509,3 +509,22 @@ test('подгонка под рельеф не трогает режим зад
   };
   assert.ok(shareIdeal(scored) > shareIdeal(puzzle), 'подгонка обязана работать только в счётных режимах');
 });
+
+// @spec GEN-HELP-003
+test('помощь тянется к максимуму линий, а не к любой очистке', () => {
+  // поле, где одна фигура гасит две линии, а многие — одну
+  const board = applyInitialBoard(createBoard(8), [
+    ...rowCells(3, [...range(0, 4), 7]), ...rowCells(4, [...range(0, 3), 6, 7]),
+  ]);
+  const reach = Math.max(...SHAPES.map((sh) => bestClear(board, sh)));
+  assert.equal(reach, 2, 'доска должна давать двойную очистку');
+  const gen = createGenerator({ requireFullSolvable: true, easyDeal: true, bulky: true });
+  let atBest = 0;
+  const runs = 30;
+  for (let s = 0; s < runs; s++) {
+    const pieces = gen(board, createRng(2100 + s), { count: 3 });
+    const got = Math.max(...pieces.map((piece) => bestClear(board, SHAPE_BY_ID[piece.shapeId])));
+    if (got >= reach) atBest += 1;
+  }
+  assert.ok(atBest / runs > 0.6, `двойная очистка в трее лишь в ${atBest}/${runs} выдач`);
+});

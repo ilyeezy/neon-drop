@@ -397,20 +397,24 @@ function findFitters(board, allowance) {
   return pool;
 }
 
-// Замена самой неудобной фигуры набора на подсказанную. `keep` защищает уже
-// подставленную подсказку: у неё самой мало мест, и без защиты вторая
-// подстановка выкидывала первую (замер: сгорания за партию падали с 204 до 44).
+// Замена самой бесполезной фигуры набора на подсказанную: сначала смотрим,
+// сколько линий фигура сжигает, и лишь при равенстве — сколько у неё мест.
+// Иначе подстановка выкидывала как раз ту, которой можно было сжечь.
 function swapWorst(board, forms, replacement, keep) {
   const out = [...forms];
   let worst = -1;
+  let worstClear = Infinity;
   let worstCount = Infinity;
   out.forEach((f, i) => {
     if (i === keep) return;
-    // фигуру, которой можно сжечь линию, не отдаём ни под какую подсказку:
-    // именно её выкидывала подстановка по рельефу как «самую неудобную»
-    if (bestClear(board, f) > 0) return;
-    const c = placementCount(board, f);
-    if (c < worstCount) { worstCount = c; worst = i; }
+    const cleared = bestClear(board, f);
+    if (cleared > worstClear) return;
+    const count = placementCount(board, f);
+    if (cleared < worstClear || count < worstCount) {
+      worstClear = cleared;
+      worstCount = count;
+      worst = i;
+    }
   });
   if (worst < 0) return { forms, index: keep };
   out[worst] = replacement;
@@ -425,8 +429,13 @@ function swapWorst(board, forms, replacement, keep) {
 // клеткой), и подгонка уводит от неё: проходимость трёх уровней просела.
 function withHelp(board, rng, best, allowance, fitters) {
   const chance = BALANCE.generator.helpChance;
-  if (best.immediate > 0 || chance <= 0) return best.forms;
-  const { keys } = findKeys(board);
+  if (chance <= 0) return best.forms;
+  // «Сжечь есть чем» мало: набор может гасить одну линию там, где другая
+  // фигура гасит две. Помощь нужна, пока набор не дотягивает до максимума,
+  // который на этом поле вообще достижим.
+  const { keys, best: reach } = findKeys(board);
+  const inSet = best.forms.reduce((m, f) => Math.max(m, bestClear(board, f)), 0);
+  if (reach > 0 && inSet >= reach) return best.forms;
   const pool = keys.length || !fitters ? keys : findFitters(board, allowance);
   if (!pool.length || rng.next() >= chance) return best.forms;
   return suggest(board, rng, best.forms, pool, -1).forms;
