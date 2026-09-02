@@ -387,23 +387,34 @@ function findFitters(board, allowance) {
       }
     }
     if (f === -Infinity) continue;
-    if (f > best) { best = f; pool.length = 0; }
-    if (f === best) pool.push(shape);
+    // нормируем на размер: прилегание суммируется по клеткам, и без нормировки
+    // «лучше всех ложится» всегда оказывался самый большой квадрат — он забивал
+    // поле, и сгорания за партию падали вчетверо
+    const score = f / shape.size;
+    if (score > best) { best = score; pool.length = 0; }
+    if (score === best) pool.push(shape);
   }
   return pool;
 }
 
-// Замена самой неудобной фигуры набора на подсказанную.
-function swapWorst(board, forms, replacement) {
+// Замена самой неудобной фигуры набора на подсказанную. `keep` защищает уже
+// подставленную подсказку: у неё самой мало мест, и без защиты вторая
+// подстановка выкидывала первую (замер: сгорания за партию падали с 204 до 44).
+function swapWorst(board, forms, replacement, keep) {
   const out = [...forms];
-  let worst = 0;
+  let worst = -1;
   let worstCount = Infinity;
   out.forEach((f, i) => {
+    if (i === keep) return;
+    // фигуру, которой можно сжечь линию, не отдаём ни под какую подсказку:
+    // именно её выкидывала подстановка по рельефу как «самую неудобную»
+    if (bestClear(board, f) > 0) return;
     const c = placementCount(board, f);
     if (c < worstCount) { worstCount = c; worst = i; }
   });
+  if (worst < 0) return { forms, index: keep };
   out[worst] = replacement;
-  return out;
+  return { forms: out, index: worst };
 }
 
 // Помощь поверх отбора: если сжечь набором нельзя, подкладываем либо фигуру,
@@ -417,12 +428,30 @@ function withHelp(board, rng, best, allowance, fitters) {
   if (best.immediate > 0 || chance <= 0) return best.forms;
   const { keys } = findKeys(board);
   const pool = keys.length || !fitters ? keys : findFitters(board, allowance);
-  if (!pool.length) return best.forms;
-  if (rng.next() >= chance) return best.forms;
-  // фигура набора уже не хуже подсказанной — менять нечего
+  if (!pool.length || rng.next() >= chance) return best.forms;
+  return suggest(board, rng, best.forms, pool, -1).forms;
+}
+
+// Замена самой неудобной фигуры набора на случайную из подсказанных.
+function suggest(board, rng, forms, pool, keep) {
+  if (!pool.length) return { forms, index: keep };
   const pick = pool[rng.int(pool.length)];
-  if (best.forms.some((f) => f.id === pick.id)) return best.forms;
-  return swapWorst(board, best.forms, pick);
+  if (forms.some((f) => f.id === pick.id)) return { forms, index: keep };
+  return swapWorst(board, forms, pick, keep);
+}
+
+// Лучшая укладка фигуры на этом поле, на клетку фигуры.
+function bestFit(board, shape) {
+  measureFree(board);
+  let best = -Infinity;
+  for (let y = 0; y <= board.size - shape.h; y++) {
+    for (let x = 0; x <= board.size - shape.w; x++) {
+      if (!canPlace(board, shape, x, y)) continue;
+      const v = fitAt(board, shape, x, y);
+      if (v > best) best = v;
+    }
+  }
+  return best === -Infinity ? best : best / shape.size;
 }
 
 // @spec GEN-PICK-001, GEN-GUAR-002, GEN-GUAR-003, GEN-SOLV-003, GEN-FAIR-001, GEN-DET-001

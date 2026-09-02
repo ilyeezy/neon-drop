@@ -475,7 +475,7 @@ test('когда сжечь нечем, в трее есть фигура под
   // но есть форма, которая ложится в неё вплотную и без дырок
   const board = stepBoard();
   const gen = createGenerator({ requireFullSolvable: true, easyDeal: true, bulky: true });
-  const bestFit = (shape) => dealChain(board, [shape]).fit;
+  const bestFit = (shape) => dealChain(board, [shape]).fit / shape.size;
   const allowed = SHAPES.filter((sh) => sh.size > 2);
   const ceiling = Math.max(...allowed.map(bestFit));
   let served = 0;
@@ -495,11 +495,15 @@ test('подгонка под рельеф не трогает режим зад
   const scored = createGenerator({ requireFullSolvable: true, easyDeal: true, bulky: true });
   const shareIdeal = (gen) => {
     const ceiling = Math.max(...SHAPES.filter((sh) => sh.size > 2)
-      .map((sh) => dealChain(board, [sh]).fit));
+      .map((sh) => dealChain(board, [sh]).fit / sh.size));
     let n = 0;
     for (let s = 0; s < 30; s++) {
       const pieces = gen(board, createRng(1900 + s), { count: 3 });
-      if (Math.max(...pieces.map((p) => dealChain(board, [SHAPE_BY_ID[p.shapeId]]).fit)) >= ceiling) n += 1;
+      const got = Math.max(...pieces.map((p) => {
+        const sh = SHAPE_BY_ID[p.shapeId];
+        return dealChain(board, [sh]).fit / sh.size;
+      }));
+      if (got >= ceiling) n += 1;
     }
     return n;
   };
