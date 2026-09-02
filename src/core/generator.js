@@ -148,27 +148,117 @@ function findKeys(board) {
 // Мерить максимум по одной фигуре нельзя: набор «одна мощная + две лишние»
 // даёт одну вспышку и обрывает серию, а игрок ждёт продолжения (замер на
 // уровнях-сериях: 0 побед из 8 против 3 из 8 у прежней выдачи).
+// Насколько аккуратно фигура ложится в рельеф, когда сжечь нечем: считаем
+// прилегание к занятым клеткам и краю, приближение строк и столбцов к
+// заполнению и штраф за новые дырки-одиночки. Без этой оценки выдача в
+// спокойный момент выбиралась вслепую — все кандидаты равны по сгораниям.
+// Счётчики свободных клеток по строкам и столбцам — считаются один раз на
+// доску, иначе внутренний цикл по столбцам съедал больше половины времени.
+const rowFree = new Uint8Array(16);
+const colFree = new Uint8Array(16);
+function measureFree(board) {
+  const n = board.size;
+  const full = fullMask(n);
+  colFree.fill(0, 0, n);
+  for (let y = 0; y < n; y++) {
+    let free = 0;
+    let m = (~board.masks[y]) & full;
+    while (m) { m &= m - 1; free += 1; }
+    rowFree[y] = free;
+    for (let x = 0; x < n; x++) if (!((board.masks[y] >> x) & 1)) colFree[x] += 1;
+  }
+}
+
+function fitAt(board, shape, x, y) {
+  const n = board.size;
+  const occupied = (cx, cy) => {
+    if (cx < 0 || cx >= n || cy < 0 || cy >= n) return true;
+    if ((board.masks[cy] >> cx) & 1) return true;
+    const dy = cy - y;
+    if (dy < 0 || dy >= shape.h) return false;
+    return ((shape.rows[dy] >> (cx - x)) & 1) === 1;
+  };
+
+  let contact = 0;
+  for (const [dx, dy] of shape.cells) {
+    const cx = x + dx;
+    const cy = y + dy;
+    if (occupied(cx - 1, cy)) contact += 1;
+    if (occupied(cx + 1, cy)) contact += 1;
+    if (occupied(cx, cy - 1)) contact += 1;
+    if (occupied(cx, cy + 1)) contact += 1;
+  }
+
+  // новые дырки-одиночки ищем только вокруг фигуры: дальше поле не менялось
+  let holes = 0;
+  for (const [dx, dy] of shape.cells) {
+    for (const [ox, oy] of NEIGHBOURS) {
+      const cx = x + dx + ox;
+      const cy = y + dy + oy;
+      if (occupied(cx, cy)) continue;
+      if (occupied(cx - 1, cy) && occupied(cx + 1, cy)
+        && occupied(cx, cy - 1) && occupied(cx, cy + 1)) holes += 1;
+    }
+  }
+
+  // строки и столбцы, которым осталось 1–2 клетки, — задел на следующий ход
+  let near = 0;
+  for (let dy = 0; dy < shape.h; dy++) {
+    let added = 0;
+    let m = shape.rows[dy];
+    while (m) { m &= m - 1; added += 1; }
+    const missing = rowFree[y + dy] - added;
+    if (missing >= 1 && missing <= 2) near += 1;
+  }
+  for (let dx = 0; dx < shape.w; dx++) {
+    let added = 0;
+    for (let dy = 0; dy < shape.h; dy++) if ((shape.rows[dy] >> dx) & 1) added += 1;
+    const missing = colFree[x + dx] - added;
+    if (missing >= 1 && missing <= 2) near += 1;
+  }
+  return contact + near * 3 - holes * 3;
+}
+
+const NEIGHBOURS = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+
 export function dealChain(board, forms) {
   let work = board;
   const rest = forms.slice();
   let chains = 0;
   let total = 0;
+  let fit = 0;
+  let immediate = 0;
   for (let step = 0; step < forms.length; step++) {
     let pick = null;
-    let bestCells = 0;
+    let bestClears = 0;
+    let bestFit = -Infinity;
+    measureFree(work);
     for (let i = 0; i < rest.length; i++) {
       const shape = rest[i];
       for (let y = 0; y <= work.size - shape.h; y++) {
         for (let x = 0; x <= work.size - shape.w; x++) {
           if (!canPlace(work, shape, x, y)) continue;
           const c = clearsAt(work, shape, x, y);
-          if (c > bestCells) { bestCells = c; pick = { i, shape, x, y }; }
+          // сгорание важнее любой укладки; при равенстве — кто лучше лёг
+          if (c < bestClears) continue;
+          const f = c > 0 ? 0 : fitAt(work, shape, x, y);
+          if (c > bestClears || f > bestFit) {
+            bestClears = c;
+            bestFit = f;
+            pick = { i, shape, x, y };
+          }
         }
       }
     }
     if (!pick) break;
-    chains += 1;
-    total += bestCells;
+    if (bestClears > 0) {
+      chains += 1;
+      total += bestClears;
+      // сгорание прямо сейчас ценнее отложенного: игрок видит поле сегодня
+      if (step === 0) immediate = 1;
+    } else {
+      fit += bestFit;
+    }
     work = cloneBoard(work);
     for (const [dx, dy] of pick.shape.cells) {
       work.masks[pick.y + dy] |= 1 << (pick.x + dx);
@@ -178,7 +268,7 @@ export function dealChain(board, forms) {
     if (rows.length || cols.length) clearLines(work, rows, cols);
     rest.splice(pick.i, 1);
   }
-  return { chains, total, left: occupiedCount(work) };
+  return { immediate, chains, total, fit, left: occupiedCount(work) };
 }
 
 // @spec GEN-PICK-004, GEN-PICK-005
@@ -252,7 +342,7 @@ export function isFullyPlayable(board, shapes, budget = BALANCE.generator.solver
 // не дать под него фигуру — самое обидное, что может сделать генератор.
 function withKey(board, rng, best) {
   const chance = BALANCE.generator.helpChance;
-  if (best.chains > 0 || chance <= 0) return best.forms;
+  if (best.immediate > 0 || chance <= 0) return best.forms;
   const { keys } = findKeys(board);
   if (!keys.length) return best.forms;
   if (rng.next() >= chance) return best.forms;
@@ -354,7 +444,9 @@ export function createGenerator(options = {}) {
       if (!easyDeal) return withColors(rng, candidate);
       // щадящая раздача: из нескольких годных троек берём ту, которой можно
       // сжечь больше линий, и лишь при равенстве — самую свободную в укладке
-      const { chains, total: lines, left } = dealChain(board, candidate);
+      const {
+        immediate, chains, total: lines, left, fit,
+      } = dealChain(board, candidate);
       const comfort = dealComfort(board, candidate);
       const cells = candidate.reduce((n, f) => n + f.size, 0);
       // Порядок ключей: сколько ходов подряд можно сжигать → сколько линий →
@@ -366,8 +458,8 @@ export function createGenerator(options = {}) {
       // против нуля). «Очистить поле» поднимает остаток на первое место.
       const third = bulky ? cells : -left;
       const key = favorSpace
-        ? [-left, chains, lines, comfort]
-        : [chains, lines, third, comfort];
+        ? [-left, immediate, chains, lines, fit, comfort]
+        : [immediate, chains, lines, fit, third, comfort];
       if (!best || cmpKey(key, best.key) > 0) best = { forms: candidate, key, chains };
       accepted += 1;
       if (accepted >= BALANCE.generator.easyCandidates) break;

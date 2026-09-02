@@ -255,6 +255,65 @@ export function createRenderer(canvas, particles) {
     }
   }
 
+  // Подсказка «остался один блок»: пустые клетки в строках и столбцах, которым
+  // до сгорания не хватает одной клетки, тихо пульсируют. Плейтест показал, что
+  // почти собранный столбец теряется в поле — игрок не видел готового хода и
+  // считал виноватой раздачу.
+  function drawAlmostFull() {
+    const b = game.board;
+    const n = b.size;
+    const full = (1 << n) - 1;
+    const cp = cellPx();
+    const glow = 0.3 + 0.2 * Math.sin(time * 3);
+    ctx.save();
+    ctx.strokeStyle = rgba(theme.accent, Math.min(1, glow + 0.45));
+    ctx.fillStyle = rgba(theme.accent, glow * 0.45);
+    ctx.lineWidth = Math.max(2, cp * 0.07);
+    ctx.shadowColor = rgba(theme.accent, 0.9);
+    ctx.shadowBlur = cp * 0.5;
+    const o = layout.boardOrigin;
+    const span = n * cp;
+    // полоса вдоль готовой линии: она объясняет, что именно сгорит, — одной
+    // подсвеченной клетки в поле не видно
+    const band = (x, y, horizontal) => {
+      ctx.save();
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = rgba(theme.accent, 0.14 + 0.1 * Math.sin(time * 3));
+      if (horizontal) ctx.fillRect(o.x, o.y + y * cp, span, cp);
+      else ctx.fillRect(o.x + x * cp, o.y, cp, span);
+      ctx.restore();
+    };
+    const mark = (x, y) => {
+      const pad = cp * 0.16;
+      const px = o.x + x * cp + pad;
+      const py = o.y + y * cp + pad;
+      const side = cp - pad * 2;
+      ctx.beginPath();
+      ctx.roundRect(px, py, side, side, cp * 0.18);
+      ctx.fill();
+      ctx.stroke();
+    };
+    for (let y = 0; y < n; y++) {
+      const free = (~b.masks[y]) & full;
+      if (free && (free & (free - 1)) === 0) {
+        band(0, y, true);
+        mark(31 - Math.clz32(free), y);
+      }
+    }
+    for (let x = 0; x < n; x++) {
+      let freeY = -1;
+      let count = 0;
+      for (let y = 0; y < n; y++) {
+        if (!((b.masks[y] >> x) & 1)) { count += 1; freeY = y; }
+      }
+      if (count === 1) {
+        band(x, 0, false);
+        mark(x, freeY);
+      }
+    }
+    ctx.restore();
+  }
+
   function drawShapeAt(shape, colorIdx, px, py, scalePx, ghost = false) {
     const img = ghost ? sprites.ghosts[colorIdx] : spriteFor(colorIdx);
     for (const [dx, dy] of shape.cells) {
@@ -435,7 +494,10 @@ export function createRenderer(canvas, particles) {
       }
     }
     drawBoardFrame();
-    if (!collapsed) drawBoardBlocks();
+    if (!collapsed) {
+      drawBoardBlocks();
+      drawAlmostFull();
+    }
     drawEffects(dt);
     particles.step(dt);
     particles.draw(ctx);

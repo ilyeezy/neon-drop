@@ -1060,7 +1060,6 @@ const RAW = [
       '........',
     ],
     goal: { type: 'streak', n: 3 },
-    moveLimit: 30,
     star2Moves: 3,
   },
   {
@@ -1384,7 +1383,6 @@ const RAW = [
       '........',
     ],
     goal: { type: 'streak', n: 4 },
-    moveLimit: 48,
     star2Moves: 3,
   },
   {
