@@ -6,7 +6,7 @@ import { THEMES, THEME_BY_ID } from '../render/themes.js';
 import { LEVELS } from '../levels/levels.js';
 import { goalText } from '../content/goals.js';
 import { unlockText, isLevelOpen } from '../content/progress.js';
-import { BIG_UNLOCK_SCORE, dailyDateKey } from '../content/modes.js';
+import { BIG_UNLOCK_SCORE } from '../content/modes.js';
 
 function el(tag, cls, text) {
   const node = document.createElement(tag);
@@ -67,16 +67,6 @@ export function createScreens({ root, hudRoot, actions, save, audio }) {
       bigBtn.append(el('span', 'hint', t('big_locked', { n: BIG_UNLOCK_SCORE })));
     }
     box.append(bigBtn);
-
-    const dailyBtn = btn('', t('menu_daily'), () => actions.onPlay('daily'));
-    const dailyInfo = el('span', 'hint');
-    const today = dailyDateKey();
-    if (save.data.daily.streakDays > 0) dailyInfo.textContent = t('daily_streak', { n: save.data.daily.streakDays });
-    if (save.data.daily.lastDate === today && save.data.daily.playedToday) {
-      dailyInfo.textContent = t('daily_played');
-    }
-    if (dailyInfo.textContent) dailyBtn.append(dailyInfo);
-    box.append(dailyBtn);
 
     box.append(btn('', t('menu_levels'), actions.onLevels));
     const rowBox = el('div', 'row');
@@ -217,9 +207,6 @@ export function createScreens({ root, hudRoot, actions, save, audio }) {
         rvRow.append(btn('rv small', t(`rv_${type}`), () => actions.onRvBoosters(type)));
       }
       box.append(rvRow);
-    }
-    if (data.rvDaily) {
-      box.append(btn('rv', `▶ ${t('rv_daily')}`, actions.onRvDaily));
     }
     box.append(btn('', t('to_menu'), actions.onQuit));
     mount('result', box);

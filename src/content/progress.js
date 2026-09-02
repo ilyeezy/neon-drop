@@ -23,7 +23,6 @@ export function unlockText(themeDef, tFn) {
   const u = themeDef.unlock;
   switch (u.type) {
     case 'score': return tFn('unlock_score', { n: u.n });
-    case 'days': return tFn('unlock_days', { n: u.n });
     case 'levels': return tFn('unlock_levels', { n: u.n });
     case 'streak': return tFn('unlock_streak', { n: u.n });
     case 'clear': return tFn('unlock_clear');
@@ -38,7 +37,6 @@ export function checkThemeUnlocks(save) {
     const u = theme.unlock;
     const s = save.stats;
     const ok = (u.type === 'score' && s.bestScore >= u.n)
-      || (u.type === 'days' && save.daily.streakDays >= u.n)
       || (u.type === 'levels' && s.levelsDone >= u.n)
       || (u.type === 'streak' && s.maxStreak >= u.n)
       || (u.type === 'clear' && s.boardsCleared > 0);
@@ -61,25 +59,6 @@ export function applyResult(save, party, game, { stars = 0, maxStreakInRun = 0, 
     if (game.score > save.records[party.recordKey]) {
       save.records[party.recordKey] = game.score;
       out.newRecord = true;
-    }
-  }
-
-  if (party.modeId === 'daily') {
-    const today = dailyDateKey();
-    if (party.scored) {
-      const yesterday = dailyDateKey(new Date(Date.now() - 86400000));
-      if (save.daily.lastDate !== today) {
-        save.daily.streakDays = save.daily.lastDate === yesterday ? save.daily.streakDays + 1 : 1;
-      } else if (save.daily.playedToday) {
-        save.daily.secondAttemptUsed = true;
-      }
-      save.daily.lastDate = today;
-      save.daily.playedToday = true;
-      save.daily.rvSecond = false;
-      if (game.score > save.daily.best) {
-        save.daily.best = game.score;
-        out.newRecord = true;
-      }
     }
   }
 

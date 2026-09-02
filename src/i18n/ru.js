@@ -4,7 +4,6 @@ export default {
 
   menu_classic: 'Классика',
   menu_big: 'Большое поле 10×10',
-  menu_daily: 'Ежедневный вызов',
   menu_levels: 'Задачи',
   menu_themes: 'Темы',
   menu_settings: 'Настройки',
@@ -12,8 +11,6 @@ export default {
   menu_tutorial: 'Обучение',
   menu_continue: 'Продолжить партию',
   big_locked: 'Откроется за {n} очков в классике',
-  daily_played: 'Сегодня сыграно — повтор будет тренировкой',
-  daily_streak: 'Серия дней: {n}',
 
   st_title: 'Настройки',
   st_sound: 'Звук',
@@ -56,7 +53,6 @@ export default {
   rv_hammer: '▶ 3 молотка',
   rv_shuffle: '▶ 3 перемешивания',
   rv_undo: '▶ 3 отмены',
-  rv_daily: 'Смотреть рекламу → второй зачётный заход',
   rv_theme: 'Смотреть рекламу → открыть тему «{name}»',
 
   levels_title: 'Задачи',
@@ -85,7 +81,6 @@ export default {
   th_ember: 'Уголь',
   th_violet: 'Фиалка',
   unlock_score: 'Набери {n} очков за партию',
-  unlock_days: 'Серия ежедневных: {n} дней',
   unlock_levels: 'Пройди {n} уровней задач',
   unlock_streak: 'Разгони стрик до ×{n}',
   unlock_clear: 'Полностью очисти поле',

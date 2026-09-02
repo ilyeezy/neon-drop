@@ -227,7 +227,7 @@ test('проигрыш и последний уровень кнопку не п
     'после проигрыша идти дальше некуда');
 
   const last = makeSession();
-  last.session.startMode('levels', 20);
+  last.session.startMode('levels', 100);
   last.session.game.end('win', 'goal');
   assert.equal(last.screens.calls.find((c) => c[0] === 'result')[1].nextLevelId, null,
     'после последнего уровня следующего нет');

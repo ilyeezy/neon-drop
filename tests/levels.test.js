@@ -7,9 +7,9 @@ import { goalText, goalDone } from '../src/content/goals.js';
 import { createGame } from '../src/core/game.js';
 import { scripted, trioP1 } from './_helpers.js';
 
-test('20 уровней с уникальными id и корректными целями', () => {
-  assert.equal(LEVELS.length, 20);
-  assert.deepEqual(LEVELS.map((l) => l.id), Array.from({ length: 20 }, (_, i) => i + 1));
+test('100 уровней с уникальными id и корректными целями', () => {
+  assert.equal(LEVELS.length, 100);
+  assert.deepEqual(LEVELS.map((l) => l.id), Array.from({ length: 100 }, (_, i) => i + 1));
   const types = new Set(LEVELS.map((l) => l.goal.type));
   for (const type of ['score', 'gold', 'ice', 'bombs', 'clearBoard', 'streak']) {
     assert.ok(types.has(type), `тип цели не используется: ${type}`);
@@ -24,6 +24,10 @@ test('20 уровней с уникальными id и корректными �
     assert.ok(goalText(level).length > 0);
   }
   assert.equal(LEVELS.find((l) => l.id === 4).moveLimit, undefined, 'на 4 уровне лимита нет');
+  // каждый тип цели должен встречаться, иначе часть механик игрок не увидит
+  for (const type of ['score', 'gold', 'ice', 'bombs', 'clearBoard', 'streak']) {
+    assert.ok(LEVELS.filter((l) => l.goal.type === type).length >= 2, `цель ${type} почти не используется`);
+  }
 });
 
 test('раскладки: без дублей клеток и валидны по инвариантам ядра', () => {
@@ -53,9 +57,11 @@ test('раскладки: ни одной изначально полной ли
   }
 });
 
-test('прогрессия спецблоков по ТЗ: 1–4 чисто, 5–9 лёд, 10–14 + камень, 15+ бомбы', () => {
+// Вводные двадцать ведут игрока по механикам; дальше уровни сгенерированы и
+// комбинируют всё, поэтому прогрессия проверяется на первом отрезке.
+test('прогрессия спецблоков во вводных уровнях: 1–4 чисто, 5–9 лёд, 10–14 + камень, 15+ бомбы', () => {
   const kinds = (level) => new Set(level.board.map((c) => c.special).filter(Boolean));
-  for (const level of LEVELS) {
+  for (const level of LEVELS.slice(0, 20)) {
     const k = kinds(level);
     if (level.id <= 4) assert.equal(k.size, 0, `уровень ${level.id}: спецблоки слишком рано`);
     if (level.id <= 9) assert.ok(!k.has('stone') && !k.has('bomb'), `уровень ${level.id}`);
@@ -65,7 +71,7 @@ test('прогрессия спецблоков по ТЗ: 1–4 чисто, 5�
   assert.ok(LEVELS.slice(9, 14).some((l) => kinds(l).has('stone')));
   assert.ok(LEVELS.slice(14).some((l) => kinds(l).has('bomb')));
   // толстый лёд (hp 2) — не раньше 15-го уровня
-  for (const level of LEVELS) {
+  for (const level of LEVELS.slice(0, 20)) {
     const thick = level.board.some((c) => c.special === 'ice' && c.hp === 2);
     if (thick) assert.ok(level.id >= 15, `уровень ${level.id}: толстый лёд слишком рано`);
   }
@@ -111,4 +117,26 @@ test('каждая тема задаёт полный набор цветов', 
       assert.match(c, /^#[0-9a-f]{6}$/i, `${th.id}: цвет ${c} должен быть hex`);
     }
   }
+});
+
+// Раскладка хранится строками — формат обязан переживать round-trip, иначе
+// правка уровня руками молча испортит поле.
+test('строковый формат раскладки разбирается однозначно', async () => {
+  const { parseBoard } = await import('../src/levels/format.js');
+  const cells = parseBoard({
+    rows: ['#i...gsb', '........', '........', '........', '........', '........', '........', '........'],
+    bombTimer: 9,
+  });
+  const at = (x) => cells.find((c) => c.x === x && c.y === 0);
+  assert.equal(at(0).special, undefined, 'обычный блок');
+  assert.equal(at(1).special, 'ice');
+  assert.equal(at(1).hp, 1);
+  assert.equal(at(5).gold, true);
+  assert.equal(at(5).color, undefined, 'золото — пустая клетка');
+  assert.equal(at(6).special, 'stone');
+  assert.equal(at(7).special, 'bomb');
+  assert.equal(at(7).timer, 9);
+  assert.equal(cells.filter((c) => c.x === 2).length, 0, 'точка — пусто');
+  const thick = parseBoard({ rows: ['I.......'] });
+  assert.equal(thick[0].hp, 2, 'заглавная I — толстый лёд');
 });

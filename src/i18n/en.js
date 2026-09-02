@@ -4,7 +4,6 @@ export default {
 
   menu_classic: 'Classic',
   menu_big: 'Big board 10×10',
-  menu_daily: 'Daily challenge',
   menu_levels: 'Puzzles',
   menu_themes: 'Themes',
   menu_settings: 'Settings',
@@ -12,8 +11,6 @@ export default {
   menu_tutorial: 'Tutorial',
   menu_continue: 'Continue game',
   big_locked: 'Unlocks at {n} points in Classic',
-  daily_played: 'Already played today — replays are practice',
-  daily_streak: 'Day streak: {n}',
 
   st_title: 'Settings',
   st_sound: 'Sound',
@@ -56,7 +53,6 @@ export default {
   rv_hammer: '▶ 3 hammers',
   rv_shuffle: '▶ 3 shuffles',
   rv_undo: '▶ 3 undos',
-  rv_daily: 'Watch ad → second ranked attempt',
   rv_theme: 'Watch ad → unlock “{name}” theme',
 
   levels_title: 'Puzzles',
@@ -85,7 +81,6 @@ export default {
   th_ember: 'Ember',
   th_violet: 'Violet',
   unlock_score: 'Score {n} points in one game',
-  unlock_days: 'Daily streak: {n} days',
   unlock_levels: 'Complete {n} puzzle levels',
   unlock_streak: 'Reach a ×{n} streak',
   unlock_clear: 'Clear the board completely',

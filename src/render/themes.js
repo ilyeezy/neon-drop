@@ -34,7 +34,7 @@ export const THEMES = [
   {
     id: 'aurora',
     nameKey: 'th_aurora',
-    unlock: { type: 'days', n: 7 },
+    unlock: { type: 'levels', n: 25 },
     colors: ['#34d399', '#22d3ee', '#a3e635', '#4ade80', '#67e8f9', '#5eead4', '#86efac'],
     bg: ['#03121a', '#07301f'],
     accent: '#34d399',

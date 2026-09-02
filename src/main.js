@@ -132,11 +132,6 @@ async function boot() {
         });
       },
       onRvBoosters: (type) => session.showRewarded(() => session.grantBoosters(type)),
-      onRvDaily: () => session.showRewarded(() => {
-        save.daily.rvSecond = true;
-        saveMgr.commit(true);
-        session.startMode('daily');
-      }),
     },
   });
   session.setScreens(screens);

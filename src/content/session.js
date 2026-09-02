@@ -48,8 +48,7 @@ export function createSession({ platform, saveMgr, renderer, layout, dragInput }
         best: null,
       };
     }
-    const best = party?.recordKey ? save().records[party.recordKey]
-      : party?.modeId === 'daily' ? save().daily.best : null;
+    const best = party?.recordKey ? save().records[party.recordKey] : null;
     return { goalLine: '', bars: [], best };
   }
 
@@ -168,22 +167,18 @@ export function createSession({ platform, saveMgr, renderer, layout, dragInput }
     save().currentRun = null;
     saveMgr.commit(true);
     adPolicy.markGameFinished();
-    const today = dailyDateKey();
     const data = {
       outcome: ev.outcome,
       level: party.level,
       stars,
       score: game.score,
-      best: party.recordKey ? save().records[party.recordKey]
-        : party.modeId === 'daily' ? save().daily.best : null,
+      best: party.recordKey ? save().records[party.recordKey] : null,
       newRecord: outcome.newRecord,
       // после победы уровень открывает следующий — предлагаем идти дальше
       // прямо отсюда, а не гонять игрока через меню и список уровней
       nextLevelId: party.level && ev.outcome === 'win' && LEVEL_BY_ID[party.level.id + 1]
         ? party.level.id + 1 : null,
       rvBoosters: true,
-      rvDaily: party.modeId === 'daily' && save().daily.lastDate === today
-        && save().daily.playedToday && !save().daily.secondAttemptUsed,
     };
     const present = () => {
       refreshHud();

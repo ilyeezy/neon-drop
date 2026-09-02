@@ -6,6 +6,7 @@ import { LEVEL_BY_ID } from '../levels/levels.js';
 
 export const BIG_UNLOCK_SCORE = 30000;
 
+// ключ дня нужен ежедневной дозаправке бустеров
 export function dailySeed(date = new Date()) {
   return date.getFullYear() * 10000 + (date.getMonth() + 1) * 100 + date.getDate();
 }
@@ -40,25 +41,6 @@ export function buildParty(modeId, { save, levelId } = {}) {
       recordKey: isBig ? 'big' : 'classic',
       level: null,
       scored: true,
-    };
-  }
-  if (modeId === 'daily') {
-    const today = dailyDateKey();
-    const alreadyPlayed = save.daily.lastDate === today && save.daily.playedToday;
-    const scored = !alreadyPlayed || (!save.daily.secondAttemptUsed && save.daily.rvSecond === true);
-    return {
-      modeId,
-      config: {
-        ...base,
-        size: 8,
-        seed: dailySeed(),
-        fairMode: false, // гарантия в ежедневном не отключается (HLD)
-        trayProvider: createGenerator({ requireFullSolvable: true, easyDeal: true }),
-      },
-      recordKey: null,
-      level: null,
-      scored,
-      dateKey: today,
     };
   }
   if (modeId === 'levels') {
