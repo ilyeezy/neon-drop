@@ -15,7 +15,7 @@ import { SHAPE_BY_ID } from './shapes.js';
 import { createRng } from './rng.js';
 import { BALANCE } from './balance.js';
 
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2;
 const TRAY_SIZE = 3;
 
 // @spec CORE-DET-004, CORE-FSM-010
@@ -60,6 +60,7 @@ class GameCore {
       this.rng = createRng(this.cfg.seed);
       this.score = 0;
       this.streakStep = 0;
+      this.dealCleared = false;
       this.moveCount = 0;
       this.boosters = { hammer: 0, shuffle: 0, undo: 0, ...(config.boosters ?? {}) };
       this.tray = new Array(TRAY_SIZE).fill(null);
@@ -128,9 +129,11 @@ class GameCore {
     this.score += delta;
     this._emit('scoreChanged', { score: this.score, delta, source: 'move' });
 
-    const prevStep = this.streakStep;
-    this.streakStep = n > 0 ? prevStep + 1 : 0;
-    if (this.streakStep !== prevStep) {
+    // Ход без очистки стрик не гасит: ступень живёт до конца раздачи и
+    // сбрасывается на пополнении трея, если за тройку не сгорело ничего.
+    if (n > 0) {
+      this.dealCleared = true;
+      this.streakStep += 1;
       this._emit('streakChanged', { step: this.streakStep, mult: streakMult(this.streakStep) });
     }
 
@@ -315,6 +318,12 @@ class GameCore {
   // Полное пополнение обновляет lastIssued и передаёт previous для анти-повтора
   // генератора; перемешивание (_requestPieces напрямую) не делает ни того ни другого.
   _refillTray() {
+    // конец раздачи: тройка дожата, и если за неё ничего не сгорело — стрик гаснет
+    if (!this.dealCleared && this.streakStep > 0) {
+      this.streakStep = 0;
+      this._emit('streakChanged', { step: 0, mult: streakMult(0) });
+    }
+    this.dealCleared = false;
     const pieces = this._requestPieces(TRAY_SIZE, this.lastIssued);
     this.tray = pieces;
     this.lastIssued = pieces.map((p) => p.shapeId);
@@ -358,6 +367,7 @@ class GameCore {
       tray: this.trayView(),
       score: this.score,
       streakStep: this.streakStep,
+      dealCleared: this.dealCleared,
       moveCount: this.moveCount,
       lastIssued: this.lastIssued ? [...this.lastIssued] : null,
       rngState: this.rng.getState(),
@@ -378,6 +388,7 @@ class GameCore {
     this.tray = snap.tray.map((p) => (p ? { ...p } : null));
     this.score = snap.score;
     this.streakStep = snap.streakStep;
+    this.dealCleared = snap.dealCleared;
     this.moveCount = snap.moveCount;
     this.lastIssued = snap.lastIssued ? [...snap.lastIssued] : null;
     this.rng.setState(snap.rngState);
@@ -408,6 +419,7 @@ class GameCore {
     this.tray = saved.tray.map((p) => (p ? { ...p } : null));
     this.score = saved.score;
     this.streakStep = saved.streakStep;
+    this.dealCleared = saved.dealCleared ?? false;
     this.moveCount = saved.moveCount;
     this.lastIssued = saved.lastIssued ? [...saved.lastIssued] : null;
     this.boosters = { hammer: 0, shuffle: 0, undo: 0, ...saved.boosters };

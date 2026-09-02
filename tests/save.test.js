@@ -122,3 +122,24 @@ test('автосейв партии: currentRun с serialize() ядра, зав�
   assert.equal(finished.currentRun, null);
   assert.equal(finished.records.classic, game.score);
 });
+
+// @spec SAVE-SCH-006
+test('миграция v2 → v3 не гасит стрик сохранённой партии', () => {
+  const old = {
+    ...defaultSave(0),
+    version: 2,
+    currentRun: { modeId: 'classic', levelId: null, extra: {}, core: { version: 1, streakStep: 3 } },
+  };
+  const next = migrate(old, 0);
+  assert.equal(next.version, SAVE_SCHEMA_VERSION);
+  assert.equal(next.currentRun.core.dealCleared, true);
+  assert.equal(next.currentRun.core.version, 2);
+  assert.equal(next.currentRun.core.streakStep, 3);
+});
+
+// @spec SAVE-SCH-006
+test('миграция без партии в сейве проходит без вреда', () => {
+  const next = migrate({ ...defaultSave(0), version: 2, currentRun: null }, 0);
+  assert.equal(next.version, SAVE_SCHEMA_VERSION);
+  assert.equal(next.currentRun, null);
+});

@@ -1,6 +1,6 @@
 // Схема сейва, версия, миграции и политика записи. Транспорт (SDK + зеркало
 // localStorage) — сегмент PLAT; здесь решается «что и когда», там — «куда».
-export const SAVE_SCHEMA_VERSION = 2;
+export const SAVE_SCHEMA_VERSION = 3;
 
 // @spec SAVE-SCH-001
 export function defaultSave(now = 0) {
@@ -22,6 +22,18 @@ export function defaultSave(now = 0) {
 const MIGRATIONS = {
   // v1 не знал про ежедневную дозаправку бустеров
   1: (save) => ({ ...save, boostersRefilledOn: null }),
+  // v2 хранил снимок партии без признака «в этой раздаче была очистка».
+  // Недоигранной раздаче даём его положительным: гасить чужой стрик при
+  // обновлении билда — худшее, что можно сделать с сохранённой партией.
+  2: (save) => (save.currentRun?.core
+    ? {
+      ...save,
+      currentRun: {
+        ...save.currentRun,
+        core: { ...save.currentRun.core, version: 2, dealCleared: true },
+      },
+    }
+    : save),
 };
 
 // @spec SAVE-SCH-003

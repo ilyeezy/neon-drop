@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { baseGame, scripted, p, rowCells, range, capture } from './_helpers.js';
+import {
+  baseGame, scripted, p, rowCells, range, capture, trioP1, FULL_STOCK,
+} from './_helpers.js';
 import { BALANCE } from '../src/core/balance.js';
 
 const clearX10000 = (n, size, step) => n * BALANCE.clearBase * size
@@ -41,10 +43,9 @@ test('стрик: текущий ход получает заработанну�
   const r2 = g.placePiece(1, 7, 1); // вторая подряд — ступень 1, после неё поле пусто
   assert.equal(r2.scoreDelta, moveDelta(1 + EMPTY_BONUS, clearX10000(1, 8, 1)));
   assert.deepEqual(log.at(-1).payload, { step: 2, mult: BALANCE.streakLadderX100[2] / 100 });
-  g.placePiece(2, 0, 0); // без очистки — сброс
-  assert.deepEqual(log.at(-1).payload, { step: 0, mult: BALANCE.streakLadderX100[0] / 100 });
   const events = log.length;
-  g.placePiece(0, 2, 2); // снова без очистки — ступень не менялась, события нет
+  g.placePiece(2, 0, 0); // без очистки — ступень держится до конца раздачи
+  assert.equal(g.streakStep, 2);
   assert.equal(log.length, events);
 });
 
@@ -71,4 +72,43 @@ test('дробные множители: целочисленный тракт, 
   const res = g.placePiece(1, 7, 0); // 3 линии на ступени 1: ×2.2 × ×1.2 = 633.6
   assert.equal(res.scoreDelta, moveDelta(3, clearX10000(3, 8, 1)));
   assert.equal(res.scoreDelta, 636); // не 637 (round) и без double-хвостов вида 636.9999
+});
+
+// @spec CORE-SCORE-002
+test('стрик живёт раздачу: сброс только после тройки без единой очистки', () => {
+  const g = baseGame({
+    initialBoard: [...rowCells(0, range(0, 6)), ...rowCells(1, range(0, 6))],
+    trayProvider: scripted(trioP1(), trioP1(), trioP1()),
+  });
+  const log = capture(g, ['streakChanged']);
+  g.placePiece(0, 7, 0); // очистка — ступень 1
+  assert.equal(g.streakStep, 1);
+  g.placePiece(1, 7, 1); // очистка — ступень 2
+  assert.equal(g.streakStep, 2);
+  g.placePiece(2, 0, 0); // раздача дожата без очистки, но очистки в ней были
+  assert.equal(g.streakStep, 2, 'раздача с очисткой стрик не гасит');
+  const events = log.length;
+  g.placePiece(0, 1, 0); // новая раздача, ходы без очисток
+  g.placePiece(1, 2, 0);
+  assert.equal(g.streakStep, 2, 'внутри раздачи ступень держится');
+  g.placePiece(2, 3, 0); // тройка дожата, очисток не было — гасим
+  assert.equal(g.streakStep, 0);
+  assert.deepEqual(log.at(-1).payload, { step: 0, mult: BALANCE.streakLadderX100[0] / 100 });
+  assert.ok(log.length > events);
+});
+
+// @spec CORE-SCORE-002, CORE-BST-007
+test('перемешивание не считается концом раздачи', () => {
+  const g = baseGame({
+    initialBoard: rowCells(0, range(0, 6)),
+    trayProvider: scripted(trioP1(), trioP1(), trioP1()),
+    boosters: FULL_STOCK,
+  });
+  g.placePiece(0, 7, 0); // очистка — ступень 1
+  assert.equal(g.streakStep, 1);
+  g.applyBooster('shuffle');
+  assert.equal(g.streakStep, 1, 'перемешивание стрик не трогает');
+  g.placePiece(0, 0, 5);
+  g.placePiece(1, 1, 5);
+  assert.equal(g.streakStep, 1, 'раздача ещё не дожата');
 });

@@ -23,7 +23,7 @@ export default {
   howto_title: 'How to play',
   howto_drag: 'Drag pieces from the tray onto the board. Full rows and columns burn away and score points.',
   howto_preview: 'While a piece hovers over the board, target cells and burning lines are highlighted.',
-  howto_streak: 'Consecutive clears grow the streak multiplier. A fully empty board pays a big bonus.',
+  howto_streak: 'Every clear grows the streak multiplier. It only resets when a whole set of three pieces goes by without a single clear. A fully empty board pays a big bonus.',
   howto_boosters: 'Boosters: hammer removes a cell, shuffle swaps pieces, undo reverts a move.',
   howto_specials: 'In puzzles: ice melts on clears, stone blocks the way, defuse bombs in time, gold closes when its line burns.',
   howto_keys: 'Keyboard: 1/2/3 or Tab to pick a piece, arrows to move, Enter or Space to place, Esc to cancel, P to pause.',
