@@ -9,6 +9,8 @@ import { SHAPE_BY_ID } from '../core/shapes.js';
 import { t } from '../i18n/index.js';
 
 const GLOW = 0.3;
+// beam и shock живут дольше, но ввод не держат: это послевкусие удара,
+// а логически ход уже разрешён
 const BLOCKING = new Set(['place', 'clear', 'collapse']);
 
 export function createRenderer(canvas, particles) {
@@ -29,12 +31,37 @@ export function createRenderer(canvas, particles) {
   let lastPlaceCenter = null;
   let prevStreakStep = 0;
   let unsub = [];
+  let gridCanvas = null;
+  let frameFlash = 0;   // всплеск свечения рамки после очистки
 
   const cellPx = () => layout.cellPx;
   const boardPx = () => game.board.size * layout.cellPx;
 
+  // Сетка статична: 64 скруглённых прямоугольника каждый кадр стоили дороже
+  // всей остальной отрисовки поля. Печём один раз на лейаут/тему.
+  function bakeGrid() {
+    if (!layout || !theme || !game) return;
+    const cp = layout.cellPx;
+    const n = game.board.size;
+    gridCanvas = gridCanvas ?? document.createElement('canvas');
+    gridCanvas.width = Math.round(cp * n * layout.dpr);
+    gridCanvas.height = Math.round(cp * n * layout.dpr);
+    const g = gridCanvas.getContext('2d');
+    g.setTransform(layout.dpr, 0, 0, layout.dpr, 0, 0);
+    g.clearRect(0, 0, cp * n, cp * n);
+    g.fillStyle = theme.grid;
+    for (let y = 0; y < n; y++) {
+      for (let x = 0; x < n; x++) {
+        g.beginPath();
+        g.roundRect(x * cp + 1.5, y * cp + 1.5, cp - 3, cp - 3, cp * 0.14);
+        g.fill();
+      }
+    }
+  }
+
   function rebake() {
     if (layout && theme) sprites = bakeSprites(layout.cellPx, theme, layout.dpr);
+    bakeGrid();
   }
 
   function setLayout(l) {
@@ -82,6 +109,7 @@ export function createRenderer(canvas, particles) {
     prevStreakStep = game ? game.streakStep : 0;
     fill = 0;
     if (!game) return;
+    bakeGrid();
 
     unsub.push(game.on('piecePlaced', ({ cells, color }) => {
       effects.push({ type: 'place', t: 0, dur: 0.18, cells, color });
@@ -90,12 +118,40 @@ export function createRenderer(canvas, particles) {
       lastPlaceCenter = cellCenter(cx, cy);
     }));
     unsub.push(game.on('linesCleared', (ev) => {
-      effects.push({ type: 'clear', t: 0, dur: 0.3, cells: ev.removedCells.map((c) => ({ x: c.x, y: c.y })) });
-      burstCells(ev.removedCells, (c) => hexRgb(cellColorHex(c.color || 1)),
-        ev.count >= 2 ? 14 : 9, 260);
-      burstCells(ev.iceDamaged, () => hexRgb(theme.ice.fill), 8, 180);
-      burstCells(ev.goldCleared, () => hexRgb(theme.gold), 12, 220);
-      if (ev.count >= 2) shake = { t: 0, dur: 0.14, mag: 5 };
+      const cp = cellPx();
+      const power = Math.min(ev.count, 5);
+      effects.push({ type: 'clear', t: 0, dur: 0.34, cells: ev.removedCells.map((c) => ({ x: c.x, y: c.y })) });
+      // светящиеся полосы вдоль сгоревших линий — главный «вау» жанра
+      for (const y of ev.rows) effects.push({ type: 'beam', t: 0, dur: 0.42, row: y });
+      for (const x of ev.cols) effects.push({ type: 'beam', t: 0, dur: 0.42, col: x });
+
+      // разлёт блоков: крупные осколки цвета блока плюс быстрые белые искры
+      for (const c of ev.removedCells) {
+        const p = cellCenter(c.x, c.y);
+        const rgbColor = hexRgb(cellColorHex(c.color || 1));
+        particles.spawn(p.x, p.y, rgbColor, 10 + power * 3, 300 + power * 40, { size: cp * 0.16 });
+        particles.spawn(p.x, p.y, [255, 255, 255], 4 + power, 520, { size: cp * 0.07, life: 0.35 });
+      }
+      burstCells(ev.iceDamaged, () => hexRgb(theme.ice.fill), 10, 200);
+      burstCells(ev.goldCleared, () => hexRgb(theme.gold), 16, 260);
+
+      // ударная волна из центра очистки + вспышка рамки поля
+      const cx = ev.removedCells.reduce((a, c) => a + c.x, 0) / Math.max(1, ev.removedCells.length);
+      const cy = ev.removedCells.reduce((a, c) => a + c.y, 0) / Math.max(1, ev.removedCells.length);
+      const center = cellCenter(cx, cy);
+      effects.push({
+        type: 'shock', t: 0, dur: 0.45, x: center.x, y: center.y,
+        radius: cp * (2.5 + power * 1.4), width: Math.max(2, cp * 0.12),
+      });
+      if (power >= 2) {
+        effects.push({
+          type: 'shock', t: -0.08, dur: 0.5, x: center.x, y: center.y,
+          radius: cp * (4 + power * 1.8), width: Math.max(2, cp * 0.08),
+        });
+      }
+      frameFlash = Math.min(1, 0.55 + power * 0.18);
+      // тряска теперь и на одной линии — слабая, но удар чувствуется
+      shake = { t: 0, dur: 0.1 + power * 0.03, mag: 2.5 + power * 1.6 };
     }));
     unsub.push(game.on('boardEmpty', () => {
       const p = cellCenter(game.board.size / 2 - 0.5, game.board.size / 2 - 0.5);
@@ -164,18 +220,10 @@ export function createRenderer(canvas, particles) {
     let pulse = 0.35 + 0.1 * Math.sin(time * 2);
     if (fill > 0.9) { frameColor = '#ef4444'; pulse = 0.5 + 0.35 * Math.sin(time * 6); }
     else if (fill > 0.75) { frameColor = '#fb923c'; pulse = 0.45 + 0.25 * Math.sin(time * 4); }
-    ctx.strokeStyle = rgba(frameColor, pulse);
-    ctx.lineWidth = Math.max(2, cp * 0.08);
+    ctx.strokeStyle = rgba(frameColor, Math.min(1, pulse + frameFlash));
+    ctx.lineWidth = Math.max(2, cp * 0.08) * (1 + frameFlash * 0.8);
     ctx.strokeRect(o.x - cp * 0.12, o.y - cp * 0.12, bp + cp * 0.24, bp + cp * 0.24);
-    // сетка
-    ctx.fillStyle = theme.grid;
-    for (let y = 0; y < game.board.size; y++) {
-      for (let x = 0; x < game.board.size; x++) {
-        ctx.beginPath();
-        ctx.roundRect(o.x + x * cp + 1.5, o.y + y * cp + 1.5, cp - 3, cp - 3, cp * 0.14);
-        ctx.fill();
-      }
-    }
+    if (gridCanvas) ctx.drawImage(gridCanvas, o.x, o.y, bp, bp);
   }
 
   function drawBoardBlocks() {
@@ -297,6 +345,38 @@ export function createRenderer(canvas, particles) {
             ctx.fill();
           }
         }
+      } else if (e.type === 'beam') {
+        // полоса света вдоль сгоревшей линии: вспыхивает и растворяется
+        const k = e.t / e.dur;
+        const alpha = (1 - k) ** 2;
+        const bp = boardPx();
+        const o = layout.boardOrigin;
+        const thickness = cp * (1 + k * 0.5);
+        const grad = e.row !== undefined
+          ? ctx.createLinearGradient(o.x, 0, o.x + bp, 0)
+          : ctx.createLinearGradient(0, o.y, 0, o.y + bp);
+        grad.addColorStop(0, rgba(theme.accent, 0));
+        grad.addColorStop(0.5, `rgba(255,255,255,${(alpha * 0.85).toFixed(3)})`);
+        grad.addColorStop(1, rgba(theme.accent, 0));
+        ctx.fillStyle = grad;
+        if (e.row !== undefined) {
+          const y = o.y + (e.row + 0.5) * cp - thickness / 2;
+          ctx.fillRect(o.x, y, bp, thickness);
+        } else {
+          const x = o.x + (e.col + 0.5) * cp - thickness / 2;
+          ctx.fillRect(x, o.y, thickness, bp);
+        }
+      } else if (e.type === 'shock') {
+        if (e.t < 0) continue;
+        const k = Math.min(1, e.t / e.dur);
+        const r = e.radius * (0.15 + k * 0.85);
+        ctx.save();
+        ctx.strokeStyle = rgba(theme.accent, (1 - k) ** 2 * 0.9);
+        ctx.lineWidth = e.width * (1 - k * 0.6);
+        ctx.beginPath();
+        ctx.arc(e.x, e.y, r, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
       } else if (e.type === 'collapse') {
         for (const cellData of e.snapshot) {
           const delay = cellData.y * 0.015;
@@ -340,6 +420,7 @@ export function createRenderer(canvas, particles) {
   function step(dt) {
     if (!layout || !theme) return;
     time += dt;
+    if (frameFlash > 0) frameFlash = Math.max(0, frameFlash - dt * 2.2);
     ctx.setTransform(layout.dpr, 0, 0, layout.dpr, 0, 0);
     ctx.clearRect(0, 0, layout.w, layout.h);
     if (!game || !sprites) return;
