@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { dragOriginPx, dragTarget, linesAfterPlace, evaluateDrag, SNAP_RADIUS } from '../src/input/drag-logic.js';
+import { dragOriginPx, dragTarget, linesAfterPlace, evaluateDrag, dragOriginFromAnchor, SNAP_RADIUS, DRAG_GAIN, MOUSE_GAIN } from '../src/input/drag-logic.js';
 import { createBoard, applyInitialBoard } from '../src/core/bitboard.js';
 import { SHAPE_BY_ID } from '../src/core/shapes.js';
 import { rowCells, range } from './_helpers.js';
@@ -71,4 +71,39 @@ test('чистота: одинаковые входы — одинаковый �
   const b = evaluateDrag(board, shape, 260, 130, opts);
   assert.deepEqual(a, b);
   assert.equal(JSON.stringify([...board.masks]), before);
+});
+
+// Без усиления путь пальца от трея до дальнего края поля равен почти всей
+// высоте экрана — главная жалоба на управление с телефона.
+// @spec INPUT-LOG-007
+test('усиление хода: фигура проходит больше пальца, мышь — один к одному', () => {
+  const shape = SHAPE_BY_ID.P1;
+  const anchor = { pointer: { x: 200, y: 600 }, origin: dragOriginPx(200, 600, shape, 40, 100) };
+  // палец поднялся на 100 px — фигура должна пройти заметно больше
+  const moved = dragOriginFromAnchor(anchor, 200, 500);
+  assert.equal(Math.round(anchor.origin.y - moved.y), Math.round(100 * DRAG_GAIN.y));
+  assert.ok(DRAG_GAIN.y > 1.4, 'вертикальное усиление ощутимо');
+  assert.ok(DRAG_GAIN.y > DRAG_GAIN.x, 'по вертикали дистанция больше, усиление сильнее');
+  // мышью ход один к одному: на десктопе рука и так дотягивается
+  const byMouse = dragOriginFromAnchor(anchor, 260, 500, MOUSE_GAIN);
+  assert.equal(byMouse.y, anchor.origin.y - 100);
+  assert.equal(byMouse.x, anchor.origin.x + 60);
+});
+
+test('в точке подъёма фигура стоит там же, куда её положил подъём', () => {
+  const shape = SHAPE_BY_ID.SQ2;
+  const origin = dragOriginPx(180, 640, shape, 40, 112);
+  const anchor = { pointer: { x: 180, y: 640 }, origin };
+  assert.deepEqual(dragOriginFromAnchor(anchor, 180, 640), origin); // усиление от нуля — ноль
+});
+
+test('усиление участвует в оценке кадра и двигает цель быстрее пальца', () => {
+  const board = createBoard(8);
+  const shape = SHAPE_BY_ID.P1;
+  const opts = { cellPx: 40, boardOriginPx: { x: 100, y: 50 }, liftPx: 40 };
+  const start = { x: 300, y: 500 };
+  const anchor = { pointer: start, origin: dragOriginPx(start.x, start.y, shape, 40, 40) };
+  const plain = evaluateDrag(board, shape, start.x, start.y - 200, opts);
+  const boosted = evaluateDrag(board, shape, start.x, start.y - 200, { ...opts, anchor });
+  assert.ok(boosted.originPx.y < plain.originPx.y, 'с усилением фигура выше при том же пальце');
 });

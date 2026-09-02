@@ -55,10 +55,28 @@ export function linesAfterPlace(board, shape, x, y) {
   return { rows, cols };
 }
 
+// Усиление хода: фигура проходит больше, чем палец. Без него, чтобы поставить
+// блок в верхний ряд, приходилось вести палец от трея через весь экран.
+// По вертикали усиление сильнее — именно там дистанция максимальна; мышью
+// усиление не нужно, там ход руки и так короткий (gain 1).
+export const DRAG_GAIN = { x: 1.25, y: 1.7 };
+export const MOUSE_GAIN = { x: 1, y: 1 };
+
+// Позиция фигуры относительно точки, где её подняли: от якоря, а не от пальца.
+// @spec INPUT-LOG-007
+export function dragOriginFromAnchor(anchor, pointerX, pointerY, gain = DRAG_GAIN) {
+  return {
+    x: anchor.origin.x + (pointerX - anchor.pointer.x) * gain.x,
+    y: anchor.origin.y + (pointerY - anchor.pointer.y) * gain.y,
+  };
+}
+
 // Полная оценка кадра перетаскивания.
 // @spec INPUT-LOG-001, INPUT-LOG-005
-export function evaluateDrag(board, shape, pointerX, pointerY, { cellPx, boardOriginPx, liftPx }) {
-  const originPx = dragOriginPx(pointerX, pointerY, shape, cellPx, liftPx);
+export function evaluateDrag(board, shape, pointerX, pointerY, { cellPx, boardOriginPx, liftPx, anchor, gain }) {
+  const originPx = anchor
+    ? dragOriginFromAnchor(anchor, pointerX, pointerY, gain ?? DRAG_GAIN)
+    : dragOriginPx(pointerX, pointerY, shape, cellPx, liftPx);
   const target = dragTarget(board, shape, originPx, boardOriginPx, cellPx);
   if (!target) return { originPx, target: null, valid: false, clears: null };
   const clears = target.valid ? linesAfterPlace(board, shape, target.x, target.y) : null;

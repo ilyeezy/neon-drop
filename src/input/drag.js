@@ -1,7 +1,7 @@
 // DOM-обвязка drag & drop: только Pointer Events — один код на мышь, тач и
 // стилус (ТЗ п. 5). Вся математика — в чистой drag-logic; здесь захват
 // указателя, пружинный возврат и защита от «залипших» фигур.
-import { evaluateDrag } from './drag-logic.js';
+import { evaluateDrag, dragOriginPx, DRAG_GAIN, MOUSE_GAIN } from './drag-logic.js';
 import { SHAPE_BY_ID } from '../core/shapes.js';
 
 const RETURN_MS = 200;
@@ -44,6 +44,8 @@ export function createDragInput({ canvas, getGame, getLayout, renderer, onPlace,
       cellPx: layout.cellPx,
       boardOriginPx: layout.boardOrigin,
       liftPx: drag.liftPx,
+      anchor: drag.anchor, // движение считается от точки подъёма, с усилением
+      gain: drag.gain,
     });
   }
 
@@ -112,13 +114,19 @@ export function createDragInput({ canvas, getGame, getLayout, renderer, onPlace,
     const layout = getLayout();
     // Фигуру поднимаем заметно выше точки касания: под пальцем её не видно,
     // а на мыши курсор всё равно перекрывает верхний ряд клеток.
-    const liftCells = e.pointerType === 'touch' ? 2.4 : 1.2;
+    const touch = e.pointerType === 'touch';
+    const liftCells = touch ? 2.8 : 1.2;
+    const shape = SHAPE_BY_ID[game.tray[slot].shapeId];
+    const liftPx = liftCells * layout.cellPx;
     drag = {
       slot,
-      shape: SHAPE_BY_ID[game.tray[slot].shapeId],
+      shape,
       color: game.tray[slot].color,
       pointerId: e.pointerId,
-      liftPx: liftCells * layout.cellPx,
+      liftPx,
+      gain: touch ? DRAG_GAIN : MOUSE_GAIN,
+      // якорь: где палец коснулся и где при этом оказалась фигура
+      anchor: { pointer: { x: p.x, y: p.y }, origin: dragOriginPx(p.x, p.y, shape, layout.cellPx, liftPx) },
       lastEval: null,
     };
     // захват не критичен: без него drag просто теряется за границами канваса
