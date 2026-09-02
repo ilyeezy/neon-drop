@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import {
-  createGenerator, isFullyPlayable, shapeWeight, bestClear, dealChain,
+  createGenerator, isFullyPlayable, shapeWeight, bestClear, dealChain, nearMissLines,
 } from '../src/core/generator.js';
 import { createRng } from '../src/core/rng.js';
 import { SHAPES, SHAPE_BY_ID } from '../src/core/shapes.js';
@@ -527,4 +527,107 @@ test('помощь тянется к максимуму линий, а не к �
     if (got >= reach) atBest += 1;
   }
   assert.ok(atBest / runs > 0.6, `двойная очистка в трее лишь в ${atBest}/${runs} выдач`);
+});
+
+// @spec GEN-HELP-004
+test('замкнутая полость в две клетки открывает дорогу мелочи', () => {
+  // карман (3,7)-(4,7): сверху и по бокам занято, фигура из трёх туда не войдёт
+  const board = applyInitialBoard(createBoard(8), [
+    ...rowCells(6, range(0, 5)), ...rowCells(7, [0, 1, 2, 5]),
+  ]);
+  const gen = createGenerator({ requireFullSolvable: true, easyDeal: true, bulky: true });
+  const rng = createRng(41);
+  let small = 0;
+  for (let i = 0; i < 60; i++) {
+    for (const piece of gen(board, rng, { count: 3 })) {
+      if (SHAPE_BY_ID[piece.shapeId].size <= 2) small += 1;
+    }
+  }
+  assert.ok(small > 0, 'под карман из двух клеток выдача обязана давать мелочь');
+});
+
+// @spec GEN-MRCY-001
+test('сигнал жалости: почти готовые линии считаются по строкам и столбцам', () => {
+  const rows = applyInitialBoard(createBoard(8), [
+    ...rowCells(6, range(0, 6)), // строке не хватает одной
+    ...rowCells(7, range(0, 5)), // и ещё одной — двух
+  ]);
+  // столбцы 0..5 при этом заняты лишь на две клетки из восьми
+  assert.equal(nearMissLines(rows), 2);
+  const column = applyInitialBoard(createBoard(8), range(1, 7).map((y) => ({ x: 3, y, color: 1 })));
+  assert.equal(nearMissLines(column), 1, 'столбцу не хватает верхней клетки');
+  assert.equal(nearMissLines(createBoard(8)), 0);
+});
+
+// @spec GEN-MRCY-002, GEN-MRCY-003
+test('жалость поднимает шанс закрывающей формы, но не гарантирует её', () => {
+  const board = applyInitialBoard(createBoard(8), rowCells(7, range(0, 6)));
+  const gen = createGenerator({ requireFullSolvable: true });
+  const share = (opts) => {
+    const rng = createRng(9);
+    let with_ = 0;
+    const runs = 200;
+    for (let i = 0; i < runs; i++) {
+      const pieces = gen(board, rng, { count: 3, ...opts });
+      if (pieces.some((piece) => bestClear(board, SHAPE_BY_ID[piece.shapeId]) > 0)) with_ += 1;
+    }
+    return with_ / runs;
+  };
+  const calm = share({ movesSinceClear: 0, dealsSinceMercy: 0 });
+  const mercy = share({ movesSinceClear: 9, dealsSinceMercy: 9 });
+  assert.ok(mercy > calm, `жалость обязана поднимать шанс: ${mercy} против ${calm}`);
+  assert.ok(mercy < 1, 'жалость не должна быть гарантией');
+});
+
+// @spec GEN-MRCY-002
+test('жалость молчит без почти готовых линий и в честном режиме', () => {
+  const gen = createGenerator({ requireFullSolvable: true });
+  const empty = createBoard(8);
+  const opts = { count: 3, movesSinceClear: 99, dealsSinceMercy: 99 };
+  const a = { ...opts };
+  gen(empty, createRng(3), a);
+  assert.ok(!a.mercyApplied, 'цепляться не за что — жалость не срабатывает');
+  const board = applyInitialBoard(createBoard(8), rowCells(7, range(0, 6)));
+  const fair = { ...opts, fairMode: true };
+  gen(board, createRng(3), fair);
+  assert.ok(!fair.mercyApplied, 'честный режим исключает жалость');
+});
+
+// @spec GEN-MRCY-005
+test('жалость не отменяет гарантию проходимости', () => {
+  const board = applyInitialBoard(createBoard(8), rowCells(7, range(0, 6)));
+  const gen = createGenerator({ requireFullSolvable: true });
+  const rng = createRng(17);
+  for (let i = 0; i < 40; i++) {
+    const pieces = gen(board, rng, { count: 3, movesSinceClear: 9, dealsSinceMercy: 9 });
+    const shapes = pieces.map((piece) => SHAPE_BY_ID[piece.shapeId]);
+    assert.equal(isFullyPlayable(board, shapes), true);
+  }
+});
+
+// @spec GEN-MRCY-006
+test('mercyAlwaysOn снимает пороги, но не отменяет прочие условия', () => {
+  const board = applyInitialBoard(createBoard(8), rowCells(7, range(0, 6)));
+  const gen = createGenerator({ requireFullSolvable: true });
+  const saved = BALANCE.generator.mercyAlwaysOn;
+  try {
+    BALANCE.generator.mercyAlwaysOn = true;
+    const fresh = { count: 3, movesSinceClear: 0, dealsSinceMercy: 0 };
+    gen(board, createRng(5), fresh);
+    assert.ok(fresh.mercyApplied, 'с флагом пороги не нужны');
+    const fair = { count: 3, movesSinceClear: 0, dealsSinceMercy: 0, fairMode: true };
+    gen(board, createRng(5), fair);
+    assert.ok(!fair.mercyApplied, 'честный режим сильнее флага');
+  } finally {
+    BALANCE.generator.mercyAlwaysOn = saved;
+  }
+});
+
+// @spec GEN-MRCY-002
+test('жалость выключается опцией генератора — режим задач её не видит', () => {
+  const board = applyInitialBoard(createBoard(8), rowCells(7, range(0, 6)));
+  const gen = createGenerator({ requireFullSolvable: true, mercy: false });
+  const opts = { count: 3, movesSinceClear: 99, dealsSinceMercy: 99 };
+  gen(board, createRng(4), opts);
+  assert.ok(!opts.mercyApplied);
 });

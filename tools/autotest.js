@@ -106,6 +106,17 @@ console.log('=== Генератор ===');
 console.log(`выдач: ${rp.issues + gp.issues}, перегенераций: ${rp.regens + gp.regens}`
   + ` (${Math.round(((rp.regens + gp.regens) / Math.max(1, rp.issues + gp.issues)) * 1000) / 10}% на выдачу),`
   + ` форсов P1: ${rp.forcedP1 + gp.forcedP1}, спасательных наборов: ${rp.rescued + gp.rescued}`);
+// @spec GEN-MRCY-002
+console.log('=== Жалость: доля раздач со срабатыванием ===');
+{
+  const buckets = ['свободно', 'средне', 'тесно'];
+  const line = buckets.map((b) => {
+    const [deals, mercy] = [rp.byBucket[b][0] + gp.byBucket[b][0], rp.byBucket[b][1] + gp.byBucket[b][1]];
+    return `${b} ${deals ? Math.round((mercy / deals) * 1000) / 10 : 0}% (${mercy}/${deals})`;
+  }).join(' | ');
+  const all = rp.issues + gp.issues;
+  console.log(`  всего ${Math.round(((rp.mercy + gp.mercy) / Math.max(1, all)) * 1000) / 10}% — ${line}`);
+}
 console.log(`=== Солвер: ${solverStats.solverCalls} вызовов на срединных досках жадного бота ===`);
 if (solverStats.solverNodes.length) {
   console.log('узлов на вызов:', summarize(solverStats.solverNodes));

@@ -61,6 +61,8 @@ class GameCore {
       this.score = 0;
       this.streakStep = 0;
       this.dealCleared = false;
+      this.movesSinceClear = 0;
+      this.dealsSinceMercy = 0;
       this.moveCount = 0;
       this.boosters = { hammer: 0, shuffle: 0, undo: 0, ...(config.boosters ?? {}) };
       this.tray = new Array(TRAY_SIZE).fill(null);
@@ -131,6 +133,7 @@ class GameCore {
 
     // Ход без очистки стрик не гасит: ступень живёт до конца раздачи и
     // сбрасывается на пополнении трея, если за тройку не сгорело ничего.
+    this.movesSinceClear = n > 0 ? 0 : this.movesSinceClear + 1;
     if (n > 0) {
       this.dealCleared = true;
       this.streakStep += 1;
@@ -325,14 +328,27 @@ class GameCore {
     }
     this.dealCleared = false;
     const pieces = this._requestPieces(TRAY_SIZE, this.lastIssued);
+    // счётчик ведём после выдачи: сработавшая жалость обнуляет отсчёт, иначе
+    // прибавляем раздачу. Перемешивание сюда не заходит — раздача не кончилась.
+    this.dealsSinceMercy = this.mercyLast ? 0 : this.dealsSinceMercy + 1;
     this.tray = pieces;
     this.lastIssued = pieces.map((p) => p.shapeId);
   }
 
+  // Счётчики жалости живут в ядре и уезжают провайдеру в opts; обратно
+  // провайдер сообщает лишь факт срабатывания — памяти между вызовами у него
+  // нет, как и с opts.previous.
+  // @spec CORE-SCORE-006
   _requestPieces(count, previous = null) {
-    const opts = { count, fairMode: this.cfg.fairMode };
+    const opts = {
+      count,
+      fairMode: this.cfg.fairMode,
+      movesSinceClear: this.movesSinceClear,
+      dealsSinceMercy: this.dealsSinceMercy,
+    };
     if (previous) opts.previous = previous;
     const pieces = this.cfg.trayProvider(this.board, this.rng, opts);
+    this.mercyLast = !!opts.mercyApplied;
     if (!Array.isArray(pieces) || pieces.length !== count) {
       throw new Error(`trayProvider must return exactly ${count} pieces`);
     }
@@ -368,6 +384,8 @@ class GameCore {
       score: this.score,
       streakStep: this.streakStep,
       dealCleared: this.dealCleared,
+      movesSinceClear: this.movesSinceClear,
+      dealsSinceMercy: this.dealsSinceMercy,
       moveCount: this.moveCount,
       lastIssued: this.lastIssued ? [...this.lastIssued] : null,
       rngState: this.rng.getState(),
@@ -389,6 +407,8 @@ class GameCore {
     this.score = snap.score;
     this.streakStep = snap.streakStep;
     this.dealCleared = snap.dealCleared;
+    this.movesSinceClear = snap.movesSinceClear;
+    this.dealsSinceMercy = snap.dealsSinceMercy;
     this.moveCount = snap.moveCount;
     this.lastIssued = snap.lastIssued ? [...snap.lastIssued] : null;
     this.rng.setState(snap.rngState);
@@ -420,6 +440,8 @@ class GameCore {
     this.score = saved.score;
     this.streakStep = saved.streakStep;
     this.dealCleared = saved.dealCleared ?? false;
+    this.movesSinceClear = saved.movesSinceClear ?? 0;
+    this.dealsSinceMercy = saved.dealsSinceMercy ?? 0;
     this.moveCount = saved.moveCount;
     this.lastIssued = saved.lastIssued ? [...saved.lastIssued] : null;
     this.boosters = { hammer: 0, shuffle: 0, undo: 0, ...saved.boosters };

@@ -38,9 +38,17 @@ function rollIndex(rng, weights, total) {
   return weights.length - 1; // кламп: накопление в double может выйти за границу
 }
 
-function pickForms(rng, count, weights, total) {
+// `mercy` (если передан) действует ровно на первый слот — остальные слоты
+// разыгрываются обычными весами: жалость сглаживает полосу невезения, а не
+// перекраивает всю раздачу.
+function pickForms(rng, count, weights, total, mercy = null) {
   const forms = [];
-  for (let i = 0; i < count; i++) forms.push(SHAPES[rollIndex(rng, weights, total)]);
+  for (let i = 0; i < count; i++) {
+    const useMercy = mercy && i === 0;
+    const w = useMercy ? mercy.weights : weights;
+    const t = useMercy ? mercy.total : total;
+    forms.push(SHAPES[rollIndex(rng, w, t)]);
+  }
   return forms;
 }
 
@@ -339,18 +347,37 @@ export function isFullyPlayable(board, shapes, budget = BALANCE.generator.solver
 
 // Мелочь (1–2 клетки) полезна не всегда: на просторном поле она скучна и
 // тратит ход впустую. Нужной она становится в тесноте и когда на поле есть
-// дырки-одиночки — клетки, куда крупная фигура уже не входит.
+// замкнутая полость в одну-две клетки: фигура из трёх клеток туда не входит
+// ни одной стороной, и без мелочи такая яма остаётся на поле навсегда.
 function needsSmall(board, fill) {
   if (fill >= BALANCE.generatorFill.high) return true;
   const n = board.size;
-  for (let y = 0; y < n; y++) {
-    for (let x = 0; x < n; x++) {
-      if ((board.masks[y] >> x) & 1) continue;
-      const up = y === 0 || ((board.masks[y - 1] >> x) & 1);
-      const down = y === n - 1 || ((board.masks[y + 1] >> x) & 1);
-      const left = x === 0 || ((board.masks[y] >> (x - 1)) & 1);
-      const right = x === n - 1 || ((board.masks[y] >> (x + 1)) & 1);
-      if (up && down && left && right) return true;
+  const seen = new Uint8Array(n * n);
+  const stack = [];
+  for (let y0 = 0; y0 < n; y0++) {
+    for (let x0 = 0; x0 < n; x0++) {
+      if (seen[y0 * n + x0] || ((board.masks[y0] >> x0) & 1)) continue;
+      // обходим связную область пустых клеток и меряем её размер
+      // область обходим целиком: прерваться на середине нельзя — непомеченный
+      // хвост той же области сойдёт за отдельный маленький карман
+      let size = 0;
+      stack.length = 0;
+      stack.push(x0, y0);
+      seen[y0 * n + x0] = 1;
+      while (stack.length) {
+        const y = stack.pop();
+        const x = stack.pop();
+        size += 1;
+        for (const [dx, dy] of NEIGHBOURS) {
+          const nx = x + dx;
+          const ny = y + dy;
+          if (nx < 0 || nx >= n || ny < 0 || ny >= n) continue;
+          if (seen[ny * n + nx] || ((board.masks[ny] >> nx) & 1)) continue;
+          seen[ny * n + nx] = 1;
+          stack.push(nx, ny);
+        }
+      }
+      if (size <= 2) return true;
     }
   }
   return false;
@@ -463,6 +490,36 @@ function bestFit(board, shape) {
   return best === -Infinity ? best : best / shape.size;
 }
 
+// Сколько строк и столбцов стоят в шаге-двух от полной. Сигнал жалости:
+// пока такие линии есть, невезение можно смягчить, не трогая правила.
+// @spec GEN-MRCY-001
+export function nearMissLines(board) {
+  const n = board.size;
+  const full = fullMask(n);
+  let lines = 0;
+  for (let y = 0; y < n; y++) {
+    let miss = 0;
+    let m = (~board.masks[y]) & full;
+    while (m) { m &= m - 1; miss += 1; }
+    if (miss >= 1 && miss <= 2) lines += 1;
+  }
+  for (let x = 0; x < n; x++) {
+    let miss = 0;
+    for (let y = 0; y < n; y++) if (!((board.masks[y] >> x) & 1)) miss += 1;
+    if (miss >= 1 && miss <= 2) lines += 1;
+  }
+  return lines;
+}
+
+// Веса для «сжалившегося» слота: формы, которыми можно закрыть линию,
+// тяжелеют в mercyBoost раз. Рулетка остаётся рулеткой — форма становится
+// вероятнее, но игрок может её и не получить.
+// @spec GEN-MRCY-003
+function mercyWeights(board, weights) {
+  const boost = BALANCE.generator.mercyBoost;
+  return weights.map((w, i) => (bestClear(board, SHAPES[i]) > 0 ? w * boost : w));
+}
+
 // @spec GEN-PICK-001, GEN-GUAR-002, GEN-GUAR-003, GEN-SOLV-003, GEN-FAIR-001, GEN-DET-001
 export function createGenerator(options = {}) {
   const requireFullSolvable = options.requireFullSolvable ?? false;
@@ -470,8 +527,19 @@ export function createGenerator(options = {}) {
   const favorSpace = options.favor === 'space';
   const smallFloor = options.smallFloor ?? 0;
   const bulky = options.bulky ?? false;
+  const mercyAllowed = options.mercy ?? true;
   const stats = options.collectStats
-    ? { issues: 0, regens: 0, forcedP1: 0, rescued: 0, solverCalls: 0, solverNodes: [] }
+    ? {
+      issues: 0,
+      regens: 0,
+      forcedP1: 0,
+      rescued: 0,
+      mercy: 0,
+      // раздачи и срабатывания жалости по корзинам заполненности
+      byBucket: { свободно: [0, 0], средне: [0, 0], тесно: [0, 0] },
+      solverCalls: 0,
+      solverNodes: [],
+    }
     : null;
 
   function provider(board, rng, opts) {
@@ -480,6 +548,9 @@ export function createGenerator(options = {}) {
     if (stats) stats.issues += 1;
 
     const fill = fillRatio(board);
+    const bucket = fill < BALANCE.generatorFill.low ? 'свободно'
+      : (fill < BALANCE.generatorFill.high ? 'средне' : 'тесно');
+    if (stats) stats.byBucket[bucket][0] += 1;
     const fair = opts.fairMode === true;
     // ТЗ 4.6: честный режим — только базовые веса, без адаптации и гарантий
     const weights = SHAPES.map((s) => (fair ? s.weight : shapeWeight(s, fill)));
@@ -487,13 +558,34 @@ export function createGenerator(options = {}) {
 
     if (fair) return withColors(rng, pickForms(rng, count, weights, total));
 
+    // Жалость: после полосы ходов без сгорания один слот тянется к формам,
+    // закрывающим почти готовую линию. Счётчики ведёт ядро (CORE-SCORE-006),
+    // провайдер остаётся без памяти между вызовами.
+    // @spec GEN-MRCY-002, GEN-MRCY-004, GEN-MRCY-006
+    const cfg = BALANCE.generator;
+    let mercy = null;
+    if (mercyAllowed && cfg.mercyEnabled && nearMissLines(board) >= 1) {
+      const ripe = cfg.mercyAlwaysOn
+        || ((opts.movesSinceClear ?? 0) >= cfg.mercyThreshold
+          && (opts.dealsSinceMercy ?? 0) >= cfg.mercyCooldown);
+      if (ripe) {
+        const boosted = mercyWeights(board, weights);
+        mercy = { weights: boosted, total: boosted.reduce((a, b) => a + b, 0) };
+        opts.mercyApplied = true;
+        if (stats) {
+          stats.mercy += 1;
+          stats.byBucket[bucket][1] += 1;
+        }
+      }
+    }
+
     const allowance = smallAllowance(board, fill, smallFloor);
     let last = null;
     let guaranteedFallback = null;
     let best = null;
     let accepted = 0;
     for (let attempt = 0; attempt < BALANCE.generator.maxAttempts; attempt++) {
-      const candidate = pickForms(rng, count, weights, total);
+      const candidate = pickForms(rng, count, weights, total, mercy);
       last = candidate;
       if (violatesAntiPatterns(candidate, previous)) {
         if (stats) stats.regens += 1;

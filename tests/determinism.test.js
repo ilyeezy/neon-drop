@@ -1,7 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createGame, deserializeGame, SAVE_VERSION } from '../src/core/game.js';
-import { baseGame, randomProvider, firstFit, comparable, scripted, trioP1 } from './_helpers.js';
+import {
+  baseGame, randomProvider, firstFit, comparable, scripted, trioP1,
+  rowCells, range, FULL_STOCK,
+} from './_helpers.js';
+import { createGenerator } from '../src/core/generator.js';
+import { greedyMove } from '../tools/bots.js';
 
 const rndCfg = (over = {}) => ({
   size: 8, seed: 20260824, headless: true, trayProvider: randomProvider, ...over,
@@ -88,4 +93,77 @@ test('несовпадение версии сейва — ошибка, а не
   const s = createGame(cfg).serialize();
   assert.throws(() => deserializeGame({ ...s, version: SAVE_VERSION + 1 }, cfg));
   assert.throws(() => deserializeGame({ ...s, version: undefined }, cfg));
+});
+
+// @spec CORE-SCORE-006
+test('счётчики жалости уезжают провайдеру и возвращаются в сейве', () => {
+  const seen = [];
+  const g = createGame({
+    size: 8,
+    seed: 5,
+    headless: true,
+    initialBoard: rowCells(7, range(0, 6)),
+    trayProvider: (board, rng, opts) => {
+      seen.push({ moves: opts.movesSinceClear, deals: opts.dealsSinceMercy });
+      return trioP1();
+    },
+  });
+  assert.deepEqual(seen[0], { moves: 0, deals: 0 });
+  g.placePiece(0, 0, 0); // без очистки
+  g.placePiece(1, 1, 0);
+  assert.equal(g.movesSinceClear, 2);
+  g.placePiece(2, 7, 7); // закрывает строку — счётчик обнуляется
+  assert.equal(g.movesSinceClear, 0);
+  assert.deepEqual(seen.at(-1), { moves: 0, deals: 1 }, 'новая раздача видит свежие счётчики');
+  const snap = g.serialize();
+  assert.equal(snap.movesSinceClear, 0);
+  assert.equal(typeof snap.dealsSinceMercy, 'number');
+});
+
+// @spec CORE-SCORE-006, GEN-MRCY-004
+test('срабатывание жалости обнуляет счётчик раздач', () => {
+  let applied = false;
+  const g = createGame({
+    size: 8,
+    seed: 5,
+    headless: true,
+    trayProvider: (board, rng, opts) => {
+      if (applied) opts.mercyApplied = true;
+      return trioP1();
+    },
+  });
+  g.placePiece(0, 0, 0);
+  g.placePiece(1, 1, 0);
+  applied = true;
+  g.placePiece(2, 2, 0); // трей опустел — новая выдача, в ней жалость
+  assert.equal(g.dealsSinceMercy, 0);
+});
+
+// @spec GEN-MRCY-002, CORE-DET-003
+test('отмена и повтор хода дают ту же тройку при включённой жалости', () => {
+  const make = () => createGame({
+    size: 8,
+    seed: 21,
+    headless: true,
+    initialBoard: rowCells(7, range(0, 5)),
+    trayProvider: createGenerator({ requireFullSolvable: true }),
+    boosters: FULL_STOCK,
+  });
+  const g = make();
+  for (let i = 0; i < 8; i++) {
+    const mv = greedyMove(g);
+    if (!mv) break;
+    g.placePiece(mv.slot, mv.x, mv.y);
+  }
+  const before = g.serialize();
+  const mv = greedyMove(g);
+  g.placePiece(mv.slot, mv.x, mv.y);
+  const after = g.serialize();
+  g.applyBooster('undo');
+  assert.deepEqual(g.serialize().tray, before.tray);
+  g.placePiece(mv.slot, mv.x, mv.y);
+  const repeated = g.serialize();
+  assert.deepEqual(repeated.tray, after.tray, 'повтор хода обязан дать ту же выдачу');
+  assert.equal(repeated.dealsSinceMercy, after.dealsSinceMercy);
+  assert.equal(repeated.movesSinceClear, after.movesSinceClear);
 });

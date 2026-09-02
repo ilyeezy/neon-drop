@@ -95,5 +95,6 @@ export default {
   str_2: 'Great!',
   str_3: 'Awesome!',
   str_4: 'Unreal!',
+  board_clear: 'Board clear!',
   perfect: 'Perfect!',
 };

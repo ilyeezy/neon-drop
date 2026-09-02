@@ -152,11 +152,27 @@ export function createRenderer(canvas, particles) {
       frameFlash = Math.min(1, 0.55 + power * 0.18);
       // тряска теперь и на одной линии — слабая, но удар чувствуется
       shake = { t: 0, dur: 0.1 + power * 0.03, mag: 2.5 + power * 1.6 };
+
+      // Похвала за две линии одним ходом: по замеру ботом это раз в 24 хода —
+      // достаточно редко, чтобы радовать. Очистка без новых дырок случается
+      // каждый третий ход и на роль «идеального хода» не годится.
+      if (ev.count >= 2) {
+        popups.push({
+          text: t('perfect'), x: center.x, y: center.y - cp * 0.6,
+          t: 0, dur: 1, color: theme.gold, big: true,
+        });
+        particles.spawn(center.x, center.y, hexRgb(theme.gold), 18 + power * 6, 340,
+          { size: cp * 0.12, life: 0.7 });
+        effects.push({
+          type: 'shock', t: -0.02, dur: 0.55, x: center.x, y: center.y,
+          radius: cp * (3 + power * 1.6), width: Math.max(2, cp * 0.16),
+        });
+      }
     }));
     unsub.push(game.on('boardEmpty', () => {
       const p = cellCenter(game.board.size / 2 - 0.5, game.board.size / 2 - 0.5);
       particles.spawn(p.x, p.y, hexRgb(theme.gold), 60, 420, { size: cellPx() * 0.16, life: 1 });
-      popups.push({ text: t('perfect'), x: p.x, y: p.y, t: 0, dur: 0.9, color: theme.gold });
+      popups.push({ text: t('board_clear'), x: p.x, y: p.y, t: 0, dur: 1.1, color: theme.gold, big: true });
     }));
     unsub.push(game.on('streakChanged', ({ step }) => {
       if (step > prevStreakStep && step >= 2) {
@@ -404,7 +420,8 @@ export function createRenderer(canvas, particles) {
       ctx.globalAlpha = Math.max(0, alpha);
       ctx.translate(pop.x, pop.y - k * cellPx() * 0.8);
       ctx.scale(scale, scale);
-      ctx.font = `800 ${Math.round(cellPx() * (pop.small ? 0.42 : 0.62))}px system-ui, sans-serif`;
+      const size = pop.small ? 0.42 : (pop.big ? 0.86 : 0.62);
+      ctx.font = `800 ${Math.round(cellPx() * size)}px system-ui, sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.strokeStyle = 'rgba(0,0,0,0.6)';
