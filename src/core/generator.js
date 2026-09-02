@@ -337,28 +337,6 @@ export function isFullyPlayable(board, shapes, budget = BALANCE.generator.solver
   return result;
 }
 
-// Если на поле есть чем сжечь линию, а в наборе такой фигуры нет — с высокой
-// вероятностью подменяем одну фигуру ключом. Игрок видит почти собранный ряд;
-// не дать под него фигуру — самое обидное, что может сделать генератор.
-function withKey(board, rng, best) {
-  const chance = BALANCE.generator.helpChance;
-  if (best.immediate > 0 || chance <= 0) return best.forms;
-  const { keys } = findKeys(board);
-  if (!keys.length) return best.forms;
-  if (rng.next() >= chance) return best.forms;
-  const forms = [...best.forms];
-  const key = keys[rng.int(keys.length)];
-  // меняем ту фигуру, которую и так тяжелее всего пристроить
-  let worst = 0;
-  let worstCount = Infinity;
-  forms.forEach((f, i) => {
-    const c = placementCount(board, f);
-    if (c < worstCount) { worstCount = c; worst = i; }
-  });
-  forms[worst] = key;
-  return forms;
-}
-
 // Мелочь (1–2 клетки) полезна не всегда: на просторном поле она скучна и
 // тратит ход впустую. Нужной она становится в тесноте и когда на поле есть
 // дырки-одиночки — клетки, куда крупная фигура уже не входит.
@@ -381,13 +359,71 @@ function needsSmall(board, fill) {
 // Сколько мелочи допустимо в одной тройке при текущем состоянии поля.
 // `floor` поднимает нижнюю границу для режимов, где мелочь — рабочий
 // инструмент: в задачах ею добивают линию через нужную клетку (золото, лёд,
-// бомба), и запрет роняет проходимость.
+// бомба), и запрет ронял проходимость.
 function smallAllowance(board, fill, floor) {
   if (fill >= BALANCE.generatorFill.high) return 2;
   return Math.max(floor, needsSmall(board, fill) ? 1 : 0);
 }
 
 const smallCount = (forms) => forms.reduce((n, f) => n + (f.size <= 2 ? 1 : 0), 0);
+
+// Фигуры каталога, которые лучше всего ложатся в текущий рельеф: заполняют
+// выемку, прижимаются к занятым клеткам, не оставляют дырок. Игрок, вырывший
+// место под конкретную форму, ждёт именно её, и не получить её — обиднее
+// всего; отбора среди случайных кандидатов для этого мало, форма может просто
+// не выпасть.
+function findFitters(board, allowance) {
+  let best = -Infinity;
+  const pool = [];
+  measureFree(board); // fitAt читает счётчики свободных клеток по строкам и столбцам
+  for (const shape of SHAPES) {
+    if (shape.size <= 2 && allowance <= 0) continue;
+    let f = -Infinity;
+    for (let y = 0; y <= board.size - shape.h; y++) {
+      for (let x = 0; x <= board.size - shape.w; x++) {
+        if (!canPlace(board, shape, x, y)) continue;
+        const v = fitAt(board, shape, x, y);
+        if (v > f) f = v;
+      }
+    }
+    if (f === -Infinity) continue;
+    if (f > best) { best = f; pool.length = 0; }
+    if (f === best) pool.push(shape);
+  }
+  return pool;
+}
+
+// Замена самой неудобной фигуры набора на подсказанную.
+function swapWorst(board, forms, replacement) {
+  const out = [...forms];
+  let worst = 0;
+  let worstCount = Infinity;
+  out.forEach((f, i) => {
+    const c = placementCount(board, f);
+    if (c < worstCount) { worstCount = c; worst = i; }
+  });
+  out[worst] = replacement;
+  return out;
+}
+
+// Помощь поверх отбора: если сжечь набором нельзя, подкладываем либо фигуру,
+// которой линия сгорит прямо сейчас, либо — когда сжигать нечего — ту, что
+// лучше всех ложится в рельеф.
+// `fitters` включает подгонку под рельеф — она уместна там, где цель партии
+// сам рельеф. В задачах цель точечная (лёд, бомба, золото под конкретной
+// клеткой), и подгонка уводит от неё: проходимость трёх уровней просела.
+function withHelp(board, rng, best, allowance, fitters) {
+  const chance = BALANCE.generator.helpChance;
+  if (best.immediate > 0 || chance <= 0) return best.forms;
+  const { keys } = findKeys(board);
+  const pool = keys.length || !fitters ? keys : findFitters(board, allowance);
+  if (!pool.length) return best.forms;
+  if (rng.next() >= chance) return best.forms;
+  // фигура набора уже не хуже подсказанной — менять нечего
+  const pick = pool[rng.int(pool.length)];
+  if (best.forms.some((f) => f.id === pick.id)) return best.forms;
+  return swapWorst(board, best.forms, pick);
+}
 
 // @spec GEN-PICK-001, GEN-GUAR-002, GEN-GUAR-003, GEN-SOLV-003, GEN-FAIR-001, GEN-DET-001
 export function createGenerator(options = {}) {
@@ -464,7 +500,7 @@ export function createGenerator(options = {}) {
       accepted += 1;
       if (accepted >= BALANCE.generator.easyCandidates) break;
     }
-    if (best) return withColors(rng, withKey(board, rng, best));
+    if (best) return withColors(rng, withHelp(board, rng, best, allowance, bulky));
 
     // Исчерпание лимита. Для режима с полной разыгрываемостью сначала пробуем
     // спасательный набор из точек: он разыгрывается всегда, пока на поле есть
