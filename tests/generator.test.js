@@ -631,3 +631,22 @@ test('жалость выключается опцией генератора �
   gen(board, createRng(4), opts);
   assert.ok(!opts.mercyApplied);
 });
+
+// @spec GEN-HELP-006
+test('под нишу выдача даёт форму, садящуюся в неё клетка в клетку', () => {
+  // ниша 2x2 в правом нижнем углу: под неё подходит ровно квадрат
+  const board = applyInitialBoard(createBoard(8), [
+    ...rowCells(5, range(0, 6)),
+    ...rowCells(6, [...range(0, 4), 7]),
+    ...rowCells(7, [...range(0, 4), 7]),
+  ]);
+  const gen = createGenerator({ requireFullSolvable: true, easyDeal: true, bulky: true });
+  const pocketIds = ['SQ2'];
+  let served = 0;
+  const runs = 30;
+  for (let s = 0; s < runs; s++) {
+    const pieces = gen(board, createRng(2500 + s), { count: 3 });
+    if (pieces.some((piece) => pocketIds.includes(piece.shapeId))) served += 1;
+  }
+  assert.ok(served / runs > 0.5, `форма под нишу лишь в ${served}/${runs} выдач`);
+});

@@ -135,18 +135,45 @@ export function bestClear(board, shape) {
   return best;
 }
 
+// Насколько ход «на ладони»: среди сжигающих позиций берём ту, где фигура
+// плотнее всего вписана в рельеф, и делим прилегание на число клеток. Игрок
+// не перебирает варианты — он видит нишу, в которую форма садится как пазл;
+// сжигающий ход в открытом поле для него всё равно что его нет.
+export function obviousClear(board, shape) {
+  measureFree(board);
+  let best = -Infinity;
+  for (let y = 0; y <= board.size - shape.h; y++) {
+    for (let x = 0; x <= board.size - shape.w; x++) {
+      if (!canPlace(board, shape, x, y)) continue;
+      if (clearsAt(board, shape, x, y) === 0) continue;
+      const v = fitAt(board, shape, x, y) / shape.size;
+      if (v > best) best = v;
+    }
+  }
+  return best;
+}
+
 // «Ключи к замку»: фигуры каталога, которыми прямо сейчас можно сжечь линию.
 // Это сердце помощи игроку — видеть почти собранный ряд и не получать под него
 // фигуру обиднее всего, а именно это и происходило, когда выдача смотрела
 // только на свободу размещения.
 function findKeys(board) {
-  const keys = [];
+  let keys = [];
   let best = 0;
+  const scored = [];
   for (const shape of SHAPES) {
     const c = bestClear(board, shape);
     if (c === 0) continue;
-    if (c > best) { best = c; keys.length = 0; }
-    if (c === best) keys.push(shape);
+    if (c > best) { best = c; scored.length = 0; }
+    if (c === best) scored.push(shape);
+  }
+  if (!scored.length) return { keys, best };
+  // Среди равных по числу линий оставляем те, чей сжигающий ход виднее всего:
+  // форма садится в нишу, а не вписывается в открытое поле хитрым образом.
+  let clearest = -Infinity;
+  for (const shape of scored) {
+    const v = obviousClear(board, shape);
+    if (v > clearest) { clearest = v; keys = [shape]; } else if (v === clearest) keys.push(shape);
   }
   return { keys, best };
 }
@@ -454,6 +481,71 @@ function swapWorst(board, forms, replacement, keep) {
 // `fitters` включает подгонку под рельеф — она уместна там, где цель партии
 // сам рельеф. В задачах цель точечная (лёд, бомба, золото под конкретной
 // клеткой), и подгонка уводит от неё: проходимость трёх уровней просела.
+// Связные области пустоты не крупнее предела — те самые «ниши», которые
+// игрок видит формой, а не подсчётом клеток до полной линии.
+function findPockets(board, limit) {
+  const n = board.size;
+  const seen = new Uint8Array(n * n);
+  const out = [];
+  for (let y0 = 0; y0 < n; y0++) {
+    for (let x0 = 0; x0 < n; x0++) {
+      if (seen[y0 * n + x0] || ((board.masks[y0] >> x0) & 1)) continue;
+      const cells = [];
+      const stack = [x0, y0];
+      seen[y0 * n + x0] = 1;
+      while (stack.length) {
+        const y = stack.pop();
+        const x = stack.pop();
+        cells.push([x, y]);
+        for (const [dx, dy] of NEIGHBOURS) {
+          const nx = x + dx;
+          const ny = y + dy;
+          if (nx < 0 || nx >= n || ny < 0 || ny >= n) continue;
+          if (seen[ny * n + nx] || ((board.masks[ny] >> nx) & 1)) continue;
+          seen[ny * n + nx] = 1;
+          stack.push(nx, ny);
+        }
+      }
+      if (cells.length <= limit) out.push(cells);
+    }
+  }
+  return out;
+}
+
+// Форма садится в нишу целиком, клетка в клетку.
+function fillsPocket(shape, cells) {
+  if (shape.size !== cells.length) return false;
+  let minX = Infinity;
+  let minY = Infinity;
+  for (const [x, y] of cells) {
+    if (x < minX) minX = x;
+    if (y < minY) minY = y;
+  }
+  return shape.cells.every(([dx, dy]) => cells
+    .some(([x, y]) => x - minX === dx && y - minY === dy));
+}
+
+// Формы, которые ложатся в какую-нибудь нишу как пазл. Это и есть ход
+// «на ладони»: игрок видит нишу и ждёт ровно её форму, а не выискивает,
+// куда пристроить фигуру ради сгорания.
+// @spec GEN-HELP-006
+function findPocketShapes(board, allowance) {
+  const pockets = findPockets(board, BALANCE.generator.pocketLimit);
+  if (!pockets.length) return [];
+  const out = [];
+  for (const shape of SHAPES) {
+    if (shape.size <= 2 && allowance <= 0) continue;
+    if (pockets.some((cells) => fillsPocket(shape, cells))) out.push(shape);
+  }
+  return out;
+}
+
+// Сначала форма ровно под нишу, и лишь если ниш нет — просто лучшая укладка.
+function pocketOrFit(board, allowance) {
+  const pocket = findPocketShapes(board, allowance);
+  return pocket.length ? pocket : findFitters(board, allowance);
+}
+
 function withHelp(board, rng, best, allowance, fitters) {
   const chance = BALANCE.generator.helpChance;
   if (chance <= 0) return best.forms;
@@ -462,10 +554,20 @@ function withHelp(board, rng, best, allowance, fitters) {
   // который на этом поле вообще достижим.
   const { keys, best: reach } = findKeys(board);
   const inSet = best.forms.reduce((m, f) => Math.max(m, bestClear(board, f)), 0);
-  if (reach > 0 && inSet >= reach) return best.forms;
-  const pool = keys.length || !fitters ? keys : findFitters(board, allowance);
-  if (!pool.length || rng.next() >= chance) return best.forms;
-  return suggest(board, rng, best.forms, pool, -1).forms;
+  if (reach === 0 || inSet < reach) {
+    const pool = keys.length || !fitters ? keys : pocketOrFit(board, allowance);
+    if (!pool.length || rng.next() >= chance) return best.forms;
+    return suggest(board, rng, best.forms, pool, -1).forms;
+  }
+  // Набор уже гасит максимум линий, но на поле стоит открытая ниша, а её
+  // формы в наборе нет. Замер: ниши есть в 70% треев, а фигура ровно под нишу
+  // попадалась лишь в 22% — отсюда ощущение «дали не то» при рабочем трее.
+  // @spec GEN-HELP-006
+  if (!fitters) return best.forms;
+  const pocket = findPocketShapes(board, allowance);
+  if (!pocket.length || best.forms.some((f) => pocket.some((p) => p.id === f.id))) return best.forms;
+  if (rng.next() >= chance) return best.forms;
+  return suggest(board, rng, best.forms, pocket, -1).forms;
 }
 
 // Замена самой неудобной фигуры набора на случайную из подсказанных.
