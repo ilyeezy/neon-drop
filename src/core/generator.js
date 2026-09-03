@@ -13,10 +13,14 @@ const COLOR_COUNT = 7;
 
 // ТЗ 4.3: адаптивные веса по заполненности поля.
 // @spec GEN-PICK-002
-export function shapeWeight(shape, fill) {
+export function shapeWeight(shape, fill, bulky = false) {
   const { low, high } = BALANCE.generatorFill;
   if (fill < low) return shape.weight * shape.size; // ТЗ 4.3: на пустом поле мелочь скучна
-  if (fill < high) return shape.weight;             // ТЗ 4.3: базовые веса
+  // ТЗ 4.3: базовые веса. В счётных режимах — с наклоном к крупным: на
+  // полупустом поле мелкая фигура тратит ход, а места ещё вдоволь. В задачах
+  // наклон не нужен, там цель точечная и крупные мешают (замер: уровень 68
+  // проседал с 54% до 38%).
+  if (fill < high) return shape.weight * (bulky ? Math.sqrt(shape.size) : 1);
   // ТЗ 4.3: игрок задыхается — мельчим. Давление на крупные растёт с теснотой,
   // мелочь и линии наоборот поддерживаются: раздача должна выручать, а не добивать.
   const { tightPenalty, smallBoost, lineBoost } = BALANCE.generator;
@@ -378,6 +382,10 @@ export function isFullyPlayable(board, shapes, budget = BALANCE.generator.solver
 // ни одной стороной, и без мелочи такая яма остаётся на поле навсегда.
 function needsSmall(board, fill) {
   if (fill >= BALANCE.generatorFill.high) return true;
+  // Пока на поле просторно, карман в одну-две клетки мелочи не стоит: место
+  // есть везде, а мелкая фигура тратит ход впустую. Закроется позже, когда
+  // поле уплотнится и мелочь снова станет уместной.
+  if (fill < BALANCE.generator.smallFillGate) return false;
   const n = board.size;
   const seen = new Uint8Array(n * n);
   const stack = [];
@@ -655,7 +663,7 @@ export function createGenerator(options = {}) {
     if (stats) stats.byBucket[bucket][0] += 1;
     const fair = opts.fairMode === true;
     // ТЗ 4.6: честный режим — только базовые веса, без адаптации и гарантий
-    const weights = SHAPES.map((s) => (fair ? s.weight : shapeWeight(s, fill)));
+    const weights = SHAPES.map((s) => (fair ? s.weight : shapeWeight(s, fill, bulky)));
     const total = weights.reduce((a, b) => a + b, 0);
 
     if (fair) return withColors(rng, pickForms(rng, count, weights, total));

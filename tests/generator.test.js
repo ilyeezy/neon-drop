@@ -447,20 +447,26 @@ test('мелочь приходит по необходимости, а не в 
 });
 
 // @spec GEN-HELP-004
-test('дырка-одиночка открывает дорогу мелочи на просторном поле', () => {
+test('дырка-одиночка открывает мелочь только на уплотнившемся поле', () => {
   const gen = createGenerator({ requireFullSolvable: true, easyDeal: true });
-  // окружаем одну пустую клетку со всех сторон: крупная фигура туда не встанет
-  const holed = applyInitialBoard(createBoard(8), [
-    ...rowCells(4, [3]), ...rowCells(6, [3]), ...rowCells(5, [2, 4]),
+  const holeAt = (extra) => applyInitialBoard(createBoard(8), [
+    ...rowCells(4, [3]), ...rowCells(6, [3]), ...rowCells(5, [2, 4]), ...extra,
   ]);
-  const rng = createRng(31);
-  let small = 0;
-  for (let i = 0; i < 200; i++) {
-    for (const piece of gen(holed, rng, { count: 3 })) {
-      if (SHAPE_BY_ID[piece.shapeId].size <= 2) small += 1;
+  const smallShare = (board) => {
+    const rng = createRng(31);
+    let small = 0;
+    for (let i = 0; i < 200; i++) {
+      for (const piece of gen(board, rng, { count: 3 })) {
+        if (SHAPE_BY_ID[piece.shapeId].size <= 2) small += 1;
+      }
     }
-  }
-  assert.ok(small > 0, 'под дырку-одиночку выдача обязана давать мелочь');
+    return small;
+  };
+  // просторное поле: дырка есть, но места вокруг вдоволь — мелочь только тратит ход
+  assert.equal(smallShare(holeAt([])), 0);
+  // то же поле, уплотнённое выше порога: мелочь снова уместна
+  const dense = [0, 1, 2, 3, 7].flatMap((y) => rowCells(y, range(0, 5)));
+  assert.ok(smallShare(holeAt(dense)) > 0, 'в тесноте под дырку выдача обязана давать мелочь');
 });
 
 // Рельеф без готовых линий: любая строка и столбец далеки от заполнения,
@@ -532,8 +538,10 @@ test('помощь тянется к максимуму линий, а не к �
 // @spec GEN-HELP-004
 test('замкнутая полость в две клетки открывает дорогу мелочи', () => {
   // карман (3,7)-(4,7): сверху и по бокам занято, фигура из трёх туда не войдёт
+  // карман (3,7)-(4,7) на поле, уплотнённом выше порога мелочи
   const board = applyInitialBoard(createBoard(8), [
     ...rowCells(6, range(0, 5)), ...rowCells(7, [0, 1, 2, 5]),
+    ...[0, 1, 2, 3].flatMap((y) => rowCells(y, range(0, 5))),
   ]);
   const gen = createGenerator({ requireFullSolvable: true, easyDeal: true, bulky: true });
   const rng = createRng(41);
